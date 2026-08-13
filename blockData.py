@@ -6,3 +6,4 @@ class BlockData:
     timestamp = str(datetime.datetime.now())
     transactions = utils.random_transactions()
 
+

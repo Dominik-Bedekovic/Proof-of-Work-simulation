@@ -2,7 +2,9 @@ from nodes import Node
 
 class MainFunctions:
 
-    def __init__(self, num_of_nodes):
+    def __init__(self, num_of_nodes, num_of_cities):
+
+        Node.initialize_tsp(num_of_cities)
 
         self.node_list = []
 
@@ -12,8 +14,15 @@ class MainFunctions:
 
     def multiple_node_pow(self, difficulty: int):
 
+        print("Pow simulation: \n")
+
+        print("Hash rate: ")
         for node in self.node_list:
             print(f"{node.name}: {node.hash_rate}", end="\t")
+        print("\n")
+
+        Node.found = False
+        Node.simulation_time = 0
 
         while not Node.found:
             results = [node.pow_mining(difficulty) for node in self.node_list]
@@ -28,11 +37,59 @@ class MainFunctions:
                 #print("Node:", winner["node"])
                 print("Name: ", winner["name"])
                 print("Hashes:", winner["hashes"])
-                print(f"Time: {winner["time"]}s")
                 print(f"Exact Time: {round(winner["exact time"], 2)}s")
                 print("Hash:", winner["hash"])
 
                 Node.found = True
+
+                print("\nMining count: ")
+                for node in self.node_list:
+                    print(f"{node.name}: {node.mining_count}", end="\t")
+
+                total_mining_count = 0
+                for node in self.node_list:
+                    total_mining_count += node.mining_count
+                print("\n\nTotal mining count:", total_mining_count)
+                print("Simulation time:", Node.simulation_time, "s")
+                print("\n\n")
+
                 break
 
             Node.simulation_time += 1
+
+    def multiple_node_pouw_tsp(self):
+
+        print("PoUW TSP simulation: \n")
+
+        print("Matrix: ")
+        for row in Node.tsp.matrix:
+            print(row)
+
+        print("\nSearch rate: ")
+        for node in self.node_list:
+            print(f"{node.name}: {node.search_rate}", end="\t")
+
+        Node.tsp.found = False
+        Node.tsp.simulation_time = 0
+
+        while not Node.tsp.found:
+
+            for node in self.node_list:
+                node.pouw_mining()
+
+            Node.tsp.simulation_time += 1
+
+
+
+        print("\nBest path:", self.node_list[0].tsp.best_path)
+        print("Best cost:", self.node_list[0].tsp.best_cost)
+
+        print("\nComputations:")
+        for node in self.node_list:
+            print(f"{node.name}: {node.computations}", end="\t")
+
+        total_computations = 0
+        for node in self.node_list:
+            total_computations += node.computations
+        print("\n\nTotal computations:", total_computations)
+        print(f"Simulation time: {Node.simulation_time}s")

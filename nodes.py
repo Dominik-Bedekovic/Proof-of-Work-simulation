@@ -31,7 +31,11 @@ class Node:
 
         self.hash_rate = utils.random_num(50, 200)
 
-        self.mining_count = 1
+        self.mining_count = 0
+
+        self.search_rate = self.hash_rate
+
+        self.computations = 0
 
     def pow_mining(self, leading_zeros):
 
@@ -49,8 +53,7 @@ class Node:
                         "node": self,
                         "name": self.name,
                         "hashes": self.mining_count,
-                        "time": Node.simulation_time,
-                        "exact time": self.mining_count / self.hash_rate,
+                        "time": self.mining_count / self.hash_rate,
                         "hash": self.header_hash
                         }
             
@@ -66,8 +69,8 @@ class Node:
         return None
 
     def pouw_mining(self):
-        best_cost, best_path = TspFunction.tsp_solver(self.tsp)
+        temp_computation = TspFunction.tsp_solver(self.tsp, self.search_rate)
 
-        return best_cost, best_path
+        self.computations += temp_computation
             
 

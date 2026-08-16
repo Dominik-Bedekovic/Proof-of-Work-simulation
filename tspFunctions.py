@@ -1,5 +1,11 @@
+from __future__ import annotations
 import utils
+import heapq
 from tspNode import TspNode
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tspData import TspData
 
 class TspFunction():
 
@@ -83,7 +89,7 @@ class TspFunction():
         return reduced_matrix, total_reduction_cost
 
     @staticmethod
-    def create_child(parent: TspNode, original_matrix, starting_city, destination_city):
+    def _create_child(parent: TspNode, original_matrix, starting_city, destination_city):
 
         child = TspNode(parent.size)
         child.matrix = [row[:] for row in parent.matrix]
@@ -94,14 +100,71 @@ class TspFunction():
         for row in range(child.size):
             child.matrix[row][destination_city] = utils.inf
 
-            child.matrix[destination_city][starting_city] = utils.inf
+        child.matrix[destination_city][starting_city] = utils.inf
 
         edge_cost = original_matrix[starting_city][destination_city] 
 
         child.matrix, reduction_cost = TspFunction._matrix_reduction(child.matrix)
 
         child.cost = edge_cost + reduction_cost + parent.cost
+        child.total_cost = edge_cost + parent.total_cost
         child.vertex = destination_city
         child.path = parent.path + [destination_city]
+        child.visited = parent.visited + 1
 
         return child
+
+    @staticmethod
+    def tsp_solver(tsp: TspData):
+
+        tsp_root = TspNode(tsp.size)
+        tsp_root.matrix = [row[:] for row in tsp.reduced_matrix] 
+        tsp_root.path.append(0)
+        tsp_root.cost = tsp.cost
+
+        priority_queue = tsp.priority_queue
+        heapq.heappush(priority_queue, tsp_root)
+
+        best_cost = utils.inf
+        best_path = []
+
+        levels = tsp_root.size
+        while (priority_queue):
+
+            current_node: TspNode = heapq.heappop(priority_queue)
+
+            if current_node.cost >= best_cost:
+                continue
+
+            if current_node.visited == levels - 1:
+
+                final_edge = tsp.matrix[current_node.vertex][0]  
+
+                if final_edge == utils.inf:
+                    continue
+
+                total_cost = current_node.total_cost + final_edge
+
+                if total_cost < best_cost:
+                    best_cost = total_cost
+                    best_path = current_node.path
+                    best_path.append(0)
+
+                continue
+
+            for neighbour_node in range(current_node.size):
+
+                if current_node.matrix[current_node.vertex][neighbour_node] != utils.inf:
+
+                    visited = neighbour_node in current_node.path
+
+                    if visited:
+                        continue
+
+                    child = TspFunction._create_child(current_node, tsp.matrix, current_node.vertex, neighbour_node)
+
+                    if child.cost < best_cost:
+                        heapq.heappush(priority_queue, child)
+
+        #print(f"final matrix: {child.matrix}")
+        return best_cost, best_path

@@ -28,3 +28,4 @@ def random_transactions():
         transactions.append(random_string(10))
 
     return tuple(transactions)
+

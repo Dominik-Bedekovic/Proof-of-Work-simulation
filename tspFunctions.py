@@ -116,8 +116,8 @@ class TspFunction():
         for _ in range(search_rate):
 
             if not priority_queue:
-                tsp.found = True
-                break
+                return computations, True
+                
 
             current_node: TspNode = heapq.heappop(priority_queue)
 
@@ -156,4 +156,4 @@ class TspFunction():
                         heapq.heappush(priority_queue, child)
 
         #print(f"final matrix: {child.matrix}")
-        return computations
+        return computations, False

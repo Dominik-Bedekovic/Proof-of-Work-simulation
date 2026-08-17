@@ -1,14 +1,36 @@
 from nodes import Node
+import utils
+import benchmark
+from blockData import BlockData
 
 class MainFunctions:
 
-    def __init__(self, num_of_nodes, num_of_cities):
+    def __init__(self, num_of_nodes, num_of_cities, runs, block_hash_difficulty):
 
-        Node.initialize_tsp(num_of_cities)
+        self.num_of_nodes = num_of_nodes
+        self.num_of_cities = num_of_cities
+        self.runs = runs
+        self.block_hash_difficulty = block_hash_difficulty
+
+        hashes_per_second = utils.average_runs(benchmark.benchmark_pow, runs)
+        print("PoW Benchmark: ")
+        print(f"Hashes/sec: {hashes_per_second:.0f}\n")
+        
+        computations_per_second = utils.average_runs(benchmark.benchmark_tsp_pouw, runs)
+        print("PoUW TSP Benchmark: ")
+        print(f"Computations/sec: {computations_per_second:.0f}\n")
+
+        Node.pouw_pow_ratio = computations_per_second / hashes_per_second
+
+        self.create_nodes()
+
+    def create_nodes(self):
+
+        Node.initialize_tsp(self.num_of_cities)
 
         self.node_list = []
 
-        for i in range(num_of_nodes):
+        for i in range(self.num_of_nodes):
             node = Node(f"node{i + 1}")
             self.node_list.append(node)
 
@@ -21,24 +43,23 @@ class MainFunctions:
             print(f"{node.name}: {node.hash_rate}", end="\t")
         print("\n")
 
-        Node.found = False
-        Node.simulation_time = 0
+        
 
         while not Node.found:
             results = [node.pow_mining(block_hash_difficulty) for node in self.node_list]
 
-            successful_nodes = [result for result in results if result is not None]
+            successful_nodes = [(node, result) for node, result in zip(self.node_list, results)
+                                if result is not None]
 
             if successful_nodes:
 
-                winner = successful_nodes[0]
+                winner, hashes = successful_nodes[0]
 
-                print("Winner is: ")
-                #print("Node:", winner["node"])
-                print("Name: ", winner["name"])
-                print("Hashes:", winner["hashes"])
-                print(f"Time: {round(winner["time"], 2)}s")
-                print("Hash:", winner["hash"])
+                print("Winner is:") 
+                print("Name:", winner.name)
+                print("Hashes:", hashes)
+                print(f"Time: {round(winner.mining_count / winner.hash_rate, 2)}s")
+                print("Hash:", winner.header_hash)
 
                 Node.found = True
 
@@ -46,14 +67,12 @@ class MainFunctions:
                 for node in self.node_list:
                     print(f"{node.name}: {node.mining_count}", end="\t")
 
-                total_mining_count = 0
-                for node in self.node_list:
-                    total_mining_count += node.mining_count
+                total_mining_count = sum(node.mining_count for node in self.node_list)
                 print("\n\nTotal mining count:", total_mining_count)
                 print("Simulation time:", Node.simulation_time, "s")
                 print("\n\n")
 
-                break
+                return total_mining_count
 
             Node.simulation_time += 1
 
@@ -69,15 +88,12 @@ class MainFunctions:
         for node in self.node_list:
             print(f"{node.name}: {node.search_rate}", end="\t")
 
-        Node.tsp.found = False
-        Node.tsp.simulation_time = 0
-
-        while not Node.tsp.found:
+        while not Node.found:
 
             for node in self.node_list:
                 node.pouw_mining()
 
-            Node.tsp.simulation_time += 1
+            Node.simulation_time += 1
 
 
 
@@ -88,8 +104,33 @@ class MainFunctions:
         for node in self.node_list:
             print(f"{node.name}: {node.computations}", end="\t")
 
-        total_computations = 0
-        for node in self.node_list:
-            total_computations += node.computations
+        total_computations = sum (node.computations for node in self.node_list)
         print("\n\nTotal computations:", total_computations)
         print(f"Simulation time: {Node.simulation_time}s")
+
+        return total_computations
+
+    def run_simulation(self):
+
+        def run_pow():
+            self.reset_simulation()
+            return self.multiple_node_pow(self.block_hash_difficulty)
+
+        def run_pouw():
+            self.reset_simulation()
+            return self.multiple_node_pouw_tsp()
+
+        average_hashes = utils.average_runs(run_pow, self.runs)
+        average_computations = utils.average_runs(run_pouw, self.runs)
+
+        print(f"Average hashes: {average_hashes:.2f}")
+        print(f"Average computation: {average_computations:.2f}")
+
+    def reset_simulation(self):
+
+        Node.blockData = BlockData()
+
+        Node.found = False
+        Node.simulation_time = 0
+
+        self.create_nodes()

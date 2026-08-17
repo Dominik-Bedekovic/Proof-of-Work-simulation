@@ -4,7 +4,6 @@ from tspData import TspData
 from tspFunctions import TspFunction
 import utils
 
-
 class Node:
 
     blockData = BlockData()
@@ -33,7 +32,8 @@ class Node:
 
         self.mining_count = 0
 
-        self.search_rate = self.hash_rate
+        ratio = getattr(Node, "pouw_pow_ratio", 1)
+        self.search_rate = round(self.hash_rate * ratio)
 
         self.computations = 0
 
@@ -49,13 +49,8 @@ class Node:
             #print(f"Header hash: {self.mining_count}: {self.header_hash}")
 
             if self.header_hash.startswith("0" * self.zero_count):
-                return {
-                        "node": self,
-                        "name": self.name,
-                        "hashes": self.mining_count,
-                        "time": self.mining_count / self.hash_rate,
-                        "hash": self.header_hash
-                        }
+                self.mining_count += 1
+                return self.mining_count
             
             elif self.nonce == pow(2, 32) - 1:
                 self.coinbase["extra_nonce"] += 1
@@ -69,8 +64,10 @@ class Node:
         return None
 
     def pouw_mining(self):
-        temp_computation = TspFunction.tsp_solver(self.tsp, self.search_rate)
+        temp_computation, finished = TspFunction.tsp_solver(self.tsp, self.search_rate)
 
         self.computations += temp_computation
-            
+
+        if finished:
+            Node.found = True
 

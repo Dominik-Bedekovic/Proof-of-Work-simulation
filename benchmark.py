@@ -31,7 +31,7 @@ def benchmark_tsp_pouw(num_of_computations=10000):
 
     start = time.perf_counter()
 
-    computations = TspFunction.tsp_solver(benchmark_tsp, num_of_computations)
+    computations, _ = TspFunction.tsp_solver(benchmark_tsp, num_of_computations)
 
     elapsed = time.perf_counter() - start
 

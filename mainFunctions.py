@@ -54,11 +54,19 @@ class MainFunctions:
             if successful_nodes:
 
                 winner, hashes = successful_nodes[0]
+                final_hashes = hashes - Node.simulation_time * winner.hash_rate
+                winner_time = final_hashes / winner.hash_rate
+
+                for node in self.node_list:
+                    if node is not winner:
+                        full_batch = node.hash_rate
+                        final_batch = round(node.hash_rate * winner_time)
+                        node.mining_count -= full_batch - final_batch
 
                 print("Winner is:") 
                 print("Name:", winner.name)
                 print("Hashes:", hashes)
-                print(f"Time: {round(winner.mining_count / winner.hash_rate, 2)}s")
+                print(f"Time: {round(hashes / winner.hash_rate, 2)}s")
                 print("Hash:", winner.header_hash)
 
                 Node.found = True
@@ -69,8 +77,11 @@ class MainFunctions:
 
                 total_mining_count = sum(node.mining_count for node in self.node_list)
                 print("\n\nTotal mining count:", total_mining_count)
+
+                Node.simulation_time += winner_time
                 print("Simulation time:", Node.simulation_time, "s")
                 print("\n\n")
+
 
                 return total_mining_count
 
@@ -90,25 +101,56 @@ class MainFunctions:
 
         while not Node.found:
 
+            results = []
+
             for node in self.node_list:
-                node.pouw_mining()
+                computations, finished = node.pouw_mining()
+                results.append((computations, finished))
 
+                if finished:
+                    Node.found = True
+
+            if Node.found:
+
+                winner_index = next(
+                    i for i, result in enumerate(results)
+                    if result[1]
+                )
+
+                winner = self.node_list[winner_index]
+                winner_computations = results[winner_index][0]
+
+                winner_time = winner_computations / winner.search_rate
+
+                for i, node in enumerate(self.node_list[:len(results)]):
+
+                    if node is not winner:
+
+                        computation_done = results[i][0]
+
+                        final_batch = round(node.search_rate * winner_time)
+
+                        node.computations -= computation_done - final_batch
+
+                Node.simulation_time += winner_time
+
+                print("\nBest path:", self.node_list[0].tsp.best_path)
+                print("Best cost:", self.node_list[0].tsp.best_cost)
+
+                print("\nComputations:")
+                for node in self.node_list:
+                    print(f"{node.name}: {node.computations}", end="\t")
+                
+                total_computations = sum (node.computations for node in self.node_list)
+                print("\n\nTotal computations:", total_computations)
+                print(f"Simulation time: {Node.simulation_time:.2f}s")
+
+                print("\n\n")
+
+                return total_computations
+
+                
             Node.simulation_time += 1
-
-
-
-        print("\nBest path:", self.node_list[0].tsp.best_path)
-        print("Best cost:", self.node_list[0].tsp.best_cost)
-
-        print("\nComputations:")
-        for node in self.node_list:
-            print(f"{node.name}: {node.computations}", end="\t")
-
-        total_computations = sum (node.computations for node in self.node_list)
-        print("\n\nTotal computations:", total_computations)
-        print(f"Simulation time: {Node.simulation_time}s")
-
-        return total_computations
 
     def run_simulation(self):
 

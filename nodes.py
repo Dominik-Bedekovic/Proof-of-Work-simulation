@@ -43,13 +43,14 @@ class Node:
 
         for _ in range(self.hash_rate):
 
+            self.mining_count += 1
+
             self.header_hash = BlockFunctions.create_header_hash(self.blockData.previous_hash, 
                 self.blockData.timestamp, self.merkle_root, self.nonce)
             
             #print(f"Header hash: {self.mining_count}: {self.header_hash}")
 
             if self.header_hash.startswith("0" * self.zero_count):
-                self.mining_count += 1
                 return self.mining_count
             
             elif self.nonce == pow(2, 32) - 1:
@@ -58,7 +59,6 @@ class Node:
                 self.nonce = 0
 
             else:
-                self.mining_count += 1
                 self.nonce += 1
 
         return None
@@ -68,6 +68,5 @@ class Node:
 
         self.computations += temp_computation
 
-        if finished:
-            Node.found = True
+        return temp_computation, finished
 

@@ -12,7 +12,7 @@ class MainFunctions:
             node = Node(f"node{i + 1}")
             self.node_list.append(node)
 
-    def multiple_node_pow(self, difficulty: int):
+    def multiple_node_pow(self, block_hash_difficulty):
 
         print("Pow simulation: \n")
 
@@ -25,7 +25,7 @@ class MainFunctions:
         Node.simulation_time = 0
 
         while not Node.found:
-            results = [node.pow_mining(difficulty) for node in self.node_list]
+            results = [node.pow_mining(block_hash_difficulty) for node in self.node_list]
 
             successful_nodes = [result for result in results if result is not None]
 

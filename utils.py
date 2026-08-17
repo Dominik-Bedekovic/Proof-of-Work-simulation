@@ -29,3 +29,11 @@ def random_transactions():
 
     return tuple(transactions)
 
+def average_runs(function, runs=10):
+
+    results = []
+
+    for _ in range(runs):
+        results.append(function())
+
+    return sum(results) / len(results)

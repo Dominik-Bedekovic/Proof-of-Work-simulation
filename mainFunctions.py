@@ -37,7 +37,7 @@ class MainFunctions:
                 #print("Node:", winner["node"])
                 print("Name: ", winner["name"])
                 print("Hashes:", winner["hashes"])
-                print(f"Exact Time: {round(winner["exact time"], 2)}s")
+                print(f"Time: {round(winner["time"], 2)}s")
                 print("Hash:", winner["hash"])
 
                 Node.found = True

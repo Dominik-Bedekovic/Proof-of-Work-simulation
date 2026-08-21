@@ -43,8 +43,6 @@ class MainFunctions:
             print(f"{node.name}: {node.hash_rate}", end="\t")
         print("\n")
 
-        
-
         while not Node.found:
             results = [node.pow_mining(block_hash_difficulty) for node in self.node_list]
 

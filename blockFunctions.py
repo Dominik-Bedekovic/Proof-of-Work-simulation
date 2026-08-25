@@ -1,31 +1,29 @@
-import utils
+from mainFunctions import MainFunctions
 
-class BlockFunctions:
 
-    @staticmethod
-    def calculate_merkle_root(block_transactions, node_coinbase):
-    
-            transaction_string = ''
-            for transaction in block_transactions:
-                transaction_string += str(transaction)  
-            #print("Transaction string: " + transaction_string)
-    
-            coinbase_string = ''
-            for value in node_coinbase.values():
-                coinbase_string += str(value) 
-            #print("Coinbase string: " + coinbase_string)
-    
-            merkle_root = transaction_string + coinbase_string
-    
-            return utils.create_hash(merkle_root)
+# Number of benchmark and simulation repetitions used
+# to calculate average results.
+runs = 5
 
-    @staticmethod
-    def create_header_hash(block_prev_hash, block_timestamp, merkle_root, node_nonce):
-        #print("block previous hash:" + self.blockData.previous_hash)
-        #print("timestamp: " + str(self.blockData.timestamp))
-        #print("merkle root hash: " + self.merkle_root)
-            
-        data = (block_prev_hash + block_timestamp
-                    + merkle_root + str(node_nonce))
-    
-        return utils.create_hash(data)
+# Number of leading zeros required in a valid PoW hash.
+block_hash_difficulty = 4
+
+# Number of nodes participating in each simulation.
+num_of_nodes = 5
+
+# Number of cities used for the TSP instance in the PoUW simulation.
+num_of_cities = 10
+
+
+# Creates the main simulation object using the defined parameters.
+simulation = MainFunctions(
+    num_of_nodes,
+    num_of_cities,
+    runs,
+    block_hash_difficulty
+)
+
+
+# Starts the PoW and PoUW simulations and calculates their
+# average results over the specified number of runs.
+simulation.run_simulation()

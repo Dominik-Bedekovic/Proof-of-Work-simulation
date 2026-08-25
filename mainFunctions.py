@@ -2,6 +2,7 @@ from nodes import Node
 import utils
 import benchmark
 from blockData import BlockData
+from validation import council_validation
 
 
 class MainFunctions:
@@ -259,6 +260,16 @@ class MainFunctions:
                     self.node_list[0].tsp.best_cost
                 )
 
+                winning_node = self.node_list[0].tsp.best_node
+
+                print("\nWinning TSP node:")
+                print("Name:", winner.name)
+                print("Path:", winning_node.path)
+                print("Cost:", winning_node.cost)
+                print("Total cost:", winning_node.total_cost)
+                print("Vertex:", winning_node.vertex)
+                print("Visited:", winning_node.visited)
+
                 print("\nComputations:")
 
                 for node in self.node_list:
@@ -285,6 +296,20 @@ class MainFunctions:
                 )
 
                 print("\n\n")
+
+                council = [
+                    node for node in self.node_list
+                    if node is not winner
+                ]
+
+                result = council_validation(
+                            self.node_list[0].tsp,
+                            council,
+                            self.node_list[0].tsp.best_path,
+                            self.node_list[0].tsp.best_cost
+                        )
+
+                print(f"Council result: {result}")
 
                 return total_computations
 

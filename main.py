@@ -15,15 +15,20 @@ num_of_nodes = 5
 num_of_cities = 10
 
 
-# Creates the main simulation object using the defined parameters.
-simulation = MainFunctions(
-    num_of_nodes,
-    num_of_cities,
-    runs,
-    block_hash_difficulty
-)
+def main():
+
+    # Creates the main simulation object using the defined parameters.
+    simulation = MainFunctions(
+        num_of_nodes,
+        num_of_cities,
+        runs,
+        block_hash_difficulty
+    )
+
+    # Starts the PoW and PoUW simulations and calculates their
+    # average results over the specified number of runs.
+    simulation.run_simulation()
 
 
-# Starts the PoW and PoUW simulations and calculates their
-# average results over the specified number of runs.
-simulation.run_simulation()
+if __name__ == "__main__":
+    main()

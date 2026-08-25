@@ -42,3 +42,5 @@ class TspData:
         # Add the root node to the priority queue so that the
         # search can begin.
         self.priority_queue.append(self.tsp_root)
+
+        self.best_node = None

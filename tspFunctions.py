@@ -168,6 +168,92 @@ class TspFunction():
 
 
     @staticmethod
+    def create_branch(tsp, branch):
+
+        root = TspNode(tsp.size)
+
+        root.matrix = [
+            row[:] for row in tsp.reduced_matrix
+        ]
+
+        root.path = [0]
+        root.vertex = 0
+        root.visited = 0
+        root.cost = tsp.cost
+        root.total_cost = 0
+
+        current = root
+
+        for city in branch[1:]:
+            current = TspFunction._create_child(
+                current,
+                tsp.matrix,
+                current.vertex,
+                city
+            )
+
+        return current
+
+    @staticmethod
+    def validate_branch(tsp, branch, proposed_cost):
+
+        branch_node = TspFunction.create_branch(
+            tsp,
+            branch
+        )
+
+        best_cost = proposed_cost
+
+        priority_queue = [branch_node]
+        heapq.heapify(priority_queue)
+
+        levels = tsp.tsp_root.size
+
+        while priority_queue:
+
+            current_node = heapq.heappop(priority_queue)
+
+            if current_node.cost >= best_cost:
+                continue
+
+            if current_node.visited == levels - 1:
+
+                final_edge = tsp.matrix[current_node.vertex][0]
+
+                if final_edge == utils.inf:
+                    continue
+
+                total_cost = (
+                    current_node.total_cost
+                    + final_edge
+                )
+
+                if total_cost < best_cost:
+                    best_cost = total_cost
+
+                continue
+
+            for neighbour in range(current_node.size):
+
+                if (current_node.matrix[current_node.vertex][neighbour] == utils.inf):
+                    continue
+
+                if neighbour in current_node.path:
+                    continue
+
+                child = TspFunction._create_child(
+                    current_node,
+                    tsp.matrix,
+                    current_node.vertex,
+                    neighbour
+                )
+
+                if child.cost < best_cost:
+                    heapq.heappush(priority_queue, child)
+
+        return best_cost >= proposed_cost
+
+    @staticmethod
     def tsp_solver(tsp: TspData, search_rate):
         # Obtain the priority queue containing nodes that still need
         # to be explored.
@@ -217,6 +303,7 @@ class TspFunction():
                 if total_cost < tsp.best_cost:
                     tsp.best_cost = total_cost
                     tsp.best_path = current_node.path + [0]
+                    tsp.best_node = current_node
 
                 continue
 

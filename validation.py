@@ -1,11 +1,12 @@
 from tspData import TspData
 from tspFunctions import TspFunction
 import multiprocessing
+import queue
 import utils
+import time 
 
 def council_validation(tsp: TspData, council, proposed_path, proposed_cost):
 
-    
     arguments = [(tsp, proposed_path, proposed_cost) for _ in council]
 
     with multiprocessing.Pool() as pool:
@@ -13,21 +14,18 @@ def council_validation(tsp: TspData, council, proposed_path, proposed_cost):
         results = pool.map(_validate_node, arguments)
 
     initial_votes = sum(results)
-    
+
+    ultimate_votes, ultimate_voters = _parallel_branch_validation(tsp, council, proposed_cost)
+
     total_votes = len(council)
-
-    with multiprocessing.Pool() as pool:
-
-        results = pool.map(_validate_branch, arguments)
-
-    ultimate_votes = sum(results)
 
     print("Council votes: ")
     print(f"Initial votes: {initial_votes}")
+    print(f"Ultimate voter: {ultimate_voters}")
     print(f"Ultimate votes: {ultimate_votes}")
     print(f"Total votes: {total_votes}")
 
-    if (_council_voting(initial_votes, ultimate_votes, total_votes) is False):
+    if not _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
         return False
 
     return True
@@ -69,23 +67,103 @@ def _validate_node(args):
 
     return valid
 
-def _validate_branch(args):
+def _parallel_branch_validation(tsp, council, proposed_cost):
 
-    tsp, branch, proposed_cost = args
+    branches = TspFunction.create_initial_branches(tsp)
 
-    return TspFunction.validate_branch(
-        tsp,
-        branch,
-        proposed_cost
-    )
+    manager = multiprocessing.Manager()
 
-def _council_voting(initial_votes, ultimate_votes, total_votes):
+    branch_queue = manager.Queue()
+    result_queue = manager.Queue()
+
+    for branch in branches:
+        branch_queue.put(branch)
+
+    processes = []
+
+    for node_index in range(len(council)):
+
+        process = multiprocessing.Process(
+            target=_branch_worker,
+            args=(
+                node_index,
+                tsp,
+                branch_queue,
+                result_queue,
+                proposed_cost
+            )
+        )
+
+        processes.append(process)
+        process.start()
+
+    for process in processes:
+        process.join()
+
+    results = []
+
+    while not result_queue.empty():
+        results.append(result_queue.get())
+
+    manager.shutdown()
+
+    ultimate_votes = 0
+    ultimate_voters = 0
+
+    for node_index, valid, branches_checked in results:
+
+        if branches_checked == 0:
+            print(
+                f"Node {node_index + 1}: "
+                f"0 branches checked, NO VOTE"
+            )
+            continue
+
+        ultimate_voters += 1
+
+        print(
+            f"Node {node_index + 1}: "
+            f"{branches_checked} branches checked, "
+            f"vote = {valid}"
+            )
+
+        if valid:
+            ultimate_votes += 1
+
+    return ultimate_votes, ultimate_voters
+
+def _branch_worker(node_index, tsp, branch_queue, result_queue, proposed_cost):
+
+    valid = True
+    branches_checked = 0
+
+    while True:
+
+        try: 
+            branch = branch_queue.get_nowait()
+        except queue.Empty:
+            break
+
+        branches_checked += 1
+
+        branch_valid = TspFunction.validate_branch(tsp, branch, proposed_cost)
+
+        if not branch_valid:
+            valid = False
+
+    result_queue.put((node_index, valid, branches_checked))
+
+
+def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
 
     vote_ratio_initial = initial_votes / total_votes
 
     print(f"Initial vote ratio: {vote_ratio_initial}")
 
-    vote_ratio_ultimate = ultimate_votes / total_votes
+    if ultimate_voters == 0:
+        return False
+
+    vote_ratio_ultimate = ultimate_votes / ultimate_voters
 
     print(f"Ultimate vote ratio: {vote_ratio_ultimate}")
 

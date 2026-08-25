@@ -168,6 +168,16 @@ class TspFunction():
 
 
     @staticmethod
+    def create_initial_branches(tsp):
+
+        branches = []
+
+        for city in range(1, tsp.size):
+            branches.append([0, city])
+
+        return branches
+
+    @staticmethod
     def create_branch(tsp, branch):
 
         root = TspNode(tsp.size)

@@ -1,5 +1,24 @@
+from mainFunctions import MainFunctions
 import tkinter as tk
 from tkinter import ttk
+
+
+
+def run_settings():
+
+    num_of_nodes = nodes.get()
+    num_of_runs = runs.get()
+    num_of_cities = cities.get()
+    block_hash_difficulty = difficulty.get()
+
+    simulation = MainFunctions(
+    num_of_nodes,
+    num_of_cities, 
+    runs,
+    block_hash_difficulty
+    )
+
+    simulation.run_simulation()
 
 root = tk.Tk()
 root.title("PoW vs PoUW Simulation")
@@ -212,7 +231,7 @@ ttk.Radiobutton(
 
 
 
-run_button = ttk.Button(settings_frame, text="Run")
+run_button = ttk.Button(settings_frame, text="Run", command=run_settings)
 run_button.grid(row=3, column=0, columnspan=2, pady=(10, 20))
 
 root.mainloop()

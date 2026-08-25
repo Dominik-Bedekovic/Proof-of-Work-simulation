@@ -323,6 +323,8 @@ class MainFunctions:
             f"{average_computations:.2f}"
         )
 
+        return average_hashes, average_computations
+
 
     def reset_simulation(self):
 

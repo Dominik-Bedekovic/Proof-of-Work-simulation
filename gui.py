@@ -108,27 +108,27 @@ difficulty_frame = ttk.Frame(pow_frame)
 difficulty_frame.grid(row=0, column=1, sticky="w", padx=10)
 
 # Another placeholder
-difficulty = tk.StringVar(value="medium")
+difficulty = tk.IntVar(value=4)
 
 ttk.Radiobutton(
     difficulty_frame,
     text="Low",
     variable=difficulty,
-    value="low"
+    value=2
 ).grid(row=0, column=0, padx=15)
 
 ttk.Radiobutton(
     difficulty_frame,
     text="Medium",
     variable=difficulty,
-    value="medium"
+    value=4
 ).grid(row=0, column=1, padx=15)
 
 ttk.Radiobutton(
     difficulty_frame,
     text="High",
     variable=difficulty,
-    value="high"
+    value=6
 ).grid(row=0, column=2, padx=15)
 
 
@@ -209,5 +209,10 @@ ttk.Radiobutton(
     variable=verification,
     value="normal"
 ).grid(row=0, column=2, padx=15)
+
+
+
+run_button = ttk.Button(settings_frame, text="Run")
+run_button.grid(row=3, column=0, columnspan=2, pady=(10, 20))
 
 root.mainloop()

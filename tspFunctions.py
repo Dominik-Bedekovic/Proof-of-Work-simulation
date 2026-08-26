@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import utils
 import heapq
+from transcript import Transcript 
 
 from tspNode import TspNode
 from typing import TYPE_CHECKING
@@ -264,7 +265,7 @@ class TspFunction():
         return best_cost >= proposed_cost
 
     @staticmethod
-    def tsp_solver(tsp: TspData, search_rate):
+    def tsp_solver(tsp: TspData, search_rate, transcript=None):
         # Obtain the priority queue containing nodes that still need
         # to be explored.
         priority_queue = tsp.priority_queue
@@ -309,6 +310,42 @@ class TspFunction():
                     + final_edge
                 )
 
+                if transcript is not None:
+
+                    data = transcript.create_step_data(
+                        computation=computations,
+                        parent_path=current_node.path,
+                        parent_vertex=current_node.vertex,
+                        parent_lower_bound=current_node.cost,
+                        selected_neighbour=0,
+                        child_path=current_node.path + [0],
+                        edge_cost=final_edge,
+                        reduction_cost=None,
+                        child_lower_bound=None,
+                        pruned=False
+                    )
+
+                    print(
+                        f"\n[TRANSCRIPT] Adding step "
+                        f"{computations}"
+                    )
+                    
+                    print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
+                    print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
+                    print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
+                    print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
+                    print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
+                    print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
+                    print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
+                    
+                    transcript.add_step(data)
+                    
+                    print(
+                        f"[TRANSCRIPT] Hash: "
+                        f"{transcript.steps[-1]['hash']}"
+                    )
+                    
+
                 # Update the best known solution if this tour is shorter.
                 if total_cost < tsp.best_cost:
                     tsp.best_cost = total_cost
@@ -339,6 +376,47 @@ class TspFunction():
                         current_node.vertex,
                         neighbour_node
                     )
+
+                    if transcript is not None:
+
+                        edge_cost = tsp.matrix[current_node.vertex][neighbour_node]
+                        reduction_cost = child.cost - current_node.cost - edge_cost
+
+                        if transcript is not None:
+
+                            data = transcript.create_step_data(
+                                computation=computations,
+                                parent_path=current_node.path,
+                                parent_vertex=current_node.vertex,
+                                parent_lower_bound=current_node.cost,
+                                selected_neighbour=neighbour_node,
+                                child_path=child.path,
+                                edge_cost=edge_cost,
+                                reduction_cost=reduction_cost,
+                                child_lower_bound=child.cost,
+                                pruned=child.cost >= tsp.best_cost
+                            )
+
+
+                        print(
+                            f"\n[TRANSCRIPT] Adding step "
+                            f"{computations}"
+                        )
+
+                        print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
+                        print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
+                        print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
+                        print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
+                        print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
+                        print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
+                        print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
+
+                        transcript.add_step(data)
+
+                        print(
+                            f"[TRANSCRIPT] Hash: "
+                            f"{transcript.steps[-1]['hash']}"
+                        )
 
                     # Only add the child to the priority queue if its
                     # lower bound can still lead to a better solution.

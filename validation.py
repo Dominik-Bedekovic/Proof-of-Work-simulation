@@ -1,9 +1,10 @@
 from tspData import TspData
 from tspFunctions import TspFunction
+from transcript import Transcript
 import multiprocessing
 import queue
 import utils
-import time 
+
 
 def council_validation(tsp: TspData, council, proposed_path, proposed_cost):
 
@@ -171,4 +172,95 @@ def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters)
         return False
 
     return True
+
+def proof_based_validation(tsp, path, proposed_cost, transcript: Transcript):
+
+    if transcript is None:
+            print("[VALIDATOR] No transcript provided.")
+            return False
     
+    if not _validate_optimal_path(tsp, path, proposed_cost, transcript):
+        print("[VALIDATOR] Final path is invalid.")
+        return False
+
+    return True
+
+def _validate_optimal_path(tsp, path, proposed_cost, transcript: Transcript):
+
+    if not transcript.verify():
+        print("[VALIDATOR] Transcript hash chain is invalid.")
+        return False
+
+    print("[VALIDATOR] Transcript hash chain is valid.")
+
+    total_cost = 0
+
+    for i in range(len(path) - 1):
+
+        source = path[i]
+        destination = path[i + 1]
+
+        expected_edge_cost = tsp.matrix[source][destination]
+
+        total_cost += expected_edge_cost
+
+        print(
+            f"[VALIDATOR] Checking edge "
+            f"{source} -> {destination}"
+        )
+
+        # O(1) lookup using (parent path, selected neighbour)
+        key = (
+            tuple(path[:i + 1]),
+            destination
+        )
+
+        data = transcript.path_index.get(key)
+
+        if data is None:
+            print(
+                f"[VALIDATOR] Edge {source} -> {destination} "
+                f"was not found in transcript."
+            )
+            return False
+
+        if data["edge_cost"] != expected_edge_cost:
+            print(
+                f"[VALIDATOR] Edge cost mismatch for "
+                f"{source} -> {destination}: "
+                f"recorded={data['edge_cost']}, "
+                f"expected={expected_edge_cost}"
+            )
+            return False
+
+        expected_child_path = path[:i + 2]
+
+        if data["child_path"] != expected_child_path:
+            print(
+                f"[VALIDATOR] Child path mismatch for "
+                f"{source} -> {destination}: "
+                f"recorded={data['child_path']}, "
+                f"expected={expected_child_path}"
+            )
+            return False
+
+        print(
+            f"[VALIDATOR] ✓ Edge {source} -> {destination} "
+            f"cost={expected_edge_cost}"
+        )
+
+    if total_cost != proposed_cost:
+        print(
+            f"[VALIDATOR] Total cost mismatch: "
+            f"calculated={total_cost}, "
+            f"proposed={proposed_cost}"
+        )
+        return False
+
+    print(
+        f"[VALIDATOR] ✓ Total path cost = {total_cost}"
+    )
+
+    print("[VALIDATOR] Optimal path validation successful.")
+
+    return True

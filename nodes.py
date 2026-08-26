@@ -2,6 +2,7 @@ from blockData import BlockData
 from blockFunctions import BlockFunctions
 from tspData import TspData
 from tspFunctions import TspFunction
+from transcript import Transcript
 import utils
 
 
@@ -19,13 +20,14 @@ class Node:
 
     # Shared TSP problem used by all PoUW nodes.
     tsp = None
+    transcript = None
 
 
     @classmethod
     def initialize_tsp(cls, num_of_nodes):
         # Generate the shared TSP problem used during the PoUW simulation.
         cls.tsp = TspData(num_of_nodes)
-
+        cls.transcript = Transcript()
 
     def __init__(self, name):
         # Identifier used to distinguish individual nodes.
@@ -118,13 +120,16 @@ class Node:
         # simulated search rate of this node.
         temp_computation, finished = TspFunction.tsp_solver(
             self.tsp,
-            self.search_rate
+            self.search_rate,
+            Node.transcript
         )
 
         # Add the number of processed search nodes to the node's
         # total computational work.
         self.computations += temp_computation
 
+        if self.transcript is not None:
+            self.transcript.verify()
         # Return the number of computations performed and indicate
         # whether the shared TSP search has been completed.
         return temp_computation, finished

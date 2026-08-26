@@ -18,13 +18,13 @@ def random_string(char_num):
     )
 
 
-def create_hash(hash_BlockData):
+def create_hash(data):
     # Calculates the SHA-256 hash of the provided data.
     # Used for generating hashes during the PoW simulation.
-    return hashlib.sha256(
-        hash_BlockData.encode()
-    ).hexdigest()
-
+    if isinstance(data, str):
+        data = data.encode()
+    
+    return hashlib.sha256(data).hexdigest()
 
 def random_num(min_num, max_num):
     # Generates a random integer within the specified range.

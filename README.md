@@ -69,7 +69,7 @@ Vrijednost `hash rate` određuje koliko hash vrijednosti pojedini čvor pokušav
 Nakon završetka rudarenja prikazuje se čvor koji je prvi pronašao valjani hash:
 
 ```text
-Winner is:
+finishing_node is:
 Name: node3
 Hashes: 45396
 Time: 240.19s

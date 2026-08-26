@@ -3,6 +3,7 @@ import utils
 import benchmark
 from blockData import BlockData
 from validation import council_validation
+from validation import proof_based_validation
 
 
 class MainFunctions:
@@ -93,23 +94,23 @@ class MainFunctions:
 
             if successful_nodes:
 
-                # The first successful node is considered the winner.
-                winner, hashes = successful_nodes[0]
+                # The first successful node is considered the finishing_node.
+                finishing_node, hashes = successful_nodes[0]
 
                 # Determine the fraction of the final simulation step
                 # that elapsed before the winning node found its hash.
                 final_hashes = (
-                    hashes - Node.simulation_time * winner.hash_rate
+                    hashes - Node.simulation_time * finishing_node.hash_rate
                 )
 
                 winner_time = (
-                    final_hashes / winner.hash_rate
+                    final_hashes / finishing_node.hash_rate
                 )
 
                 # Remove the unused portion of the final batch from
                 # every node that did not find the winning hash.
                 for node in self.node_list:
-                    if node is not winner:
+                    if node is not finishing_node:
 
                         full_batch = node.hash_rate
 
@@ -121,14 +122,14 @@ class MainFunctions:
                             full_batch - final_batch
                         )
 
-                print("Winner is:")
-                print("Name:", winner.name)
+                print("finishing_node is:")
+                print("Name:", finishing_node.name)
                 print("Hashes:", hashes)
                 print(
                     f"Time: "
-                    f"{round(hashes / winner.hash_rate, 2)}s"
+                    f"{round(hashes / finishing_node.hash_rate, 2)}s"
                 )
-                print("Hash:", winner.header_hash)
+                print("Hash:", finishing_node.header_hash)
 
                 Node.found = True
 
@@ -210,42 +211,43 @@ class MainFunctions:
             if Node.found:
 
                 # Find the node that completed the TSP search.
-                winner_index = next(
+                finishing_node_index = next(
                     i for i, result in enumerate(results)
                     if result[1]
                 )
 
-                winner = self.node_list[winner_index]
+                finishing_node = self.node_list[finishing_node_index]
 
-                winner_computations = (
-                    results[winner_index][0]
+                finishing_node_computations = (
+                    results[finishing_node_index][0]
                 )
 
                 # Calculate the fraction of the final simulation
                 # step required by the winning node.
                 winner_time = (
-                    winner_computations / winner.search_rate
+                    finishing_node_computations / finishing_node.search_rate
                 )
 
                 # Remove the unused portion of the final batch from
                 # nodes that did not finish the search.
-                for i, node in enumerate(
-                    self.node_list[:len(results)]
-                ):
+                if finishing_node_computations > 0:
+                    for i, node in enumerate(
+                        self.node_list[:len(results)]
+                    ):
 
-                    if node is not winner:
+                        if node is not finishing_node:
 
-                        computation_done = results[i][0]
+                            computation_done = results[i][0]
 
-                        final_batch = round(
-                            node.search_rate
-                            * winner_time
-                        )
+                            final_batch = round(
+                                node.search_rate
+                                * winner_time
+                            )
 
-                        node.computations -= (
-                            computation_done
-                            - final_batch
-                        )
+                            node.computations -= (
+                                computation_done
+                                - final_batch
+                            )
 
                 # Add the fractional final step to the simulation time.
                 Node.simulation_time += winner_time
@@ -263,7 +265,7 @@ class MainFunctions:
                 winning_node = self.node_list[0].tsp.best_node
 
                 print("\nWinning TSP node:")
-                print("Name:", winner.name)
+                print("Name:", finishing_node.name)
                 print("Path:", winning_node.path)
                 print("Cost:", winning_node.cost)
                 print("Total cost:", winning_node.total_cost)
@@ -297,19 +299,29 @@ class MainFunctions:
 
                 print("\n\n")
 
+                """
                 council = [
-                    node for node in self.node_list
-                    if node is not winner
-                ]
+                                    node for node in self.node_list
+                                    if node is not finishing_node
+                                ]
+                
+                                result = council_validation(
+                                            self.node_list[0].tsp,
+                                            council,
+                                            self.node_list[0].tsp.best_path,
+                                            self.node_list[0].tsp.best_cost
+                                        )
+                
+                                print(f"Council result: {result}")
+                
+                """
 
-                result = council_validation(
-                            self.node_list[0].tsp,
-                            council,
-                            self.node_list[0].tsp.best_path,
-                            self.node_list[0].tsp.best_cost
-                        )
-
-                print(f"Council result: {result}")
+                proof_based_validation(
+                    self.node_list[0].tsp,
+                    self.node_list[0].tsp.best_path,
+                    self.node_list[0].tsp.best_cost,
+                    Node.transcript
+                )
 
                 return total_computations
 

@@ -313,7 +313,6 @@ class TspFunction():
                 if transcript is not None:
 
                     data = transcript.create_step_data(
-                        computation=computations,
                         parent_path=current_node.path,
                         parent_vertex=current_node.vertex,
                         parent_lower_bound=current_node.cost,
@@ -325,11 +324,6 @@ class TspFunction():
                         pruned=False
                     )
 
-                    print(
-                        f"\n[TRANSCRIPT] Adding step "
-                        f"{computations}"
-                    )
-                    
                     print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
                     print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
                     print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
@@ -385,7 +379,6 @@ class TspFunction():
                         if transcript is not None:
 
                             data = transcript.create_step_data(
-                                computation=computations,
                                 parent_path=current_node.path,
                                 parent_vertex=current_node.vertex,
                                 parent_lower_bound=current_node.cost,
@@ -397,11 +390,6 @@ class TspFunction():
                                 pruned=child.cost >= tsp.best_cost
                             )
 
-
-                        print(
-                            f"\n[TRANSCRIPT] Adding step "
-                            f"{computations}"
-                        )
 
                         print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
                         print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")

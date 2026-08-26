@@ -12,7 +12,7 @@ block_hash_difficulty = 4
 num_of_nodes = 5
 
 # Number of cities used for the TSP instance in the PoUW simulation.
-num_of_cities = 4
+num_of_cities = 10
 
 
 def main():

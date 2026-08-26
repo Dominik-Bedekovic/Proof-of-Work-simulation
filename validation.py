@@ -173,23 +173,48 @@ def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters)
 
     return True
 
-def proof_based_validation(tsp, path, proposed_cost, transcript: Transcript):
+def proof_based_validation(
+    tsp,
+    path,
+    proposed_cost,
+    transcript
+):
 
     if transcript is None:
-            print("[VALIDATOR] No transcript provided.")
-            return False
-    
-    if not _validate_optimal_path(tsp, path, proposed_cost, transcript):
-        print("[VALIDATOR] Final path is invalid.")
+        print("[VALIDATOR] No transcript provided.")
         return False
+
+    # Validate the transcript hash chain.
+    if not _parallel_hash_validation(
+        transcript,
+        num_validators=4
+    ):
+        print(
+            "[VALIDATOR] Transcript validation failed."
+        )
+        return False
+
+    # Validate the claimed final path.
+    if not _validate_calculated_path(
+        tsp,
+        path,
+        proposed_cost,
+        transcript
+    ):
+        print(
+            "[VALIDATOR] Final path is invalid."
+        )
+        return False
+
+    print(
+        "[VALIDATOR] Proof-based validation successful."
+    )
 
     return True
 
-def _validate_optimal_path(tsp, path, proposed_cost, transcript: Transcript):
+def _validate_calculated_path(tsp, path, proposed_cost, transcript: Transcript):
 
-    if not transcript.verify():
-        print("[VALIDATOR] Transcript hash chain is invalid.")
-        return False
+  
 
     print("[VALIDATOR] Transcript hash chain is valid.")
 
@@ -264,3 +289,189 @@ def _validate_optimal_path(tsp, path, proposed_cost, transcript: Transcript):
     print("[VALIDATOR] Optimal path validation successful.")
 
     return True
+
+def _parallel_hash_validation(transcript, num_validators):
+
+    if transcript is None:
+        print("[VALIDATOR] No transcript provided.")
+        return False
+
+    steps = transcript.steps
+    total_steps = len(steps)
+
+    if total_steps == 0:
+        print("[VALIDATOR] Transcript contains no steps.")
+        return False
+
+    # Do not create more validators than there are steps.
+    num_validators = min(
+        num_validators,
+        total_steps
+    )
+
+    # Calculate the hash that comes before the
+    # first transcript step.
+    initial_hash = utils.create_hash(
+        transcript.sigma
+    )
+
+    arguments = []
+
+    base_size = total_steps // num_validators
+    remainder = total_steps % num_validators
+
+    current_index = 0
+
+    for node_index in range(num_validators):
+
+        # Distribute the remainder between the first
+        # few validators.
+        slice_size = base_size
+
+        if node_index < remainder:
+            slice_size += 1
+
+        start_index = current_index
+        end_index = start_index + slice_size
+
+        # The first validator starts with hash(sigma).
+        if start_index == 0:
+            slice_initial_hash = initial_hash
+
+        # Every other validator starts with the hash
+        # stored by the step immediately before its slice.
+        else:
+            slice_initial_hash = steps[
+                start_index - 1
+            ]["hash"]
+
+        arguments.append(
+            (
+                node_index,
+                steps,
+                start_index,
+                end_index,
+                slice_initial_hash
+            )
+        )
+
+        current_index = end_index
+
+    with multiprocessing.Pool(
+        processes=num_validators
+    ) as pool:
+
+        results = pool.map(
+            _hash_slice_worker,
+            arguments
+        )
+
+    print("\n[VALIDATOR] Hash-chain validation:")
+
+    all_valid = True
+
+    for (
+        node_index,
+        valid,
+        steps_checked,
+        failed_index
+    ) in results:
+
+        if valid:
+
+            print(
+                f"Node {node_index + 1}: "
+                f"{steps_checked} steps checked, "
+                f"VALID"
+            )
+
+        else:
+
+            print(
+                f"Node {node_index + 1}: "
+                f"hash validation FAILED at "
+                f"step {failed_index}"
+            )
+
+            all_valid = False
+
+    if all_valid:
+
+        print(
+            "[VALIDATOR] Hash chain is valid."
+        )
+
+    else:
+
+        print(
+            "[VALIDATOR] Hash chain is INVALID."
+        )
+
+    return all_valid
+
+def _hash_slice_worker(args):
+    (
+        node_index,
+        steps,
+        start_index,
+        end_index,
+        initial_hash
+    ) = args
+
+    previous_hash = initial_hash
+    steps_checked = 0
+
+    for index in range(start_index, end_index):
+
+        step = steps[index]
+
+        expected_step_number = index + 1
+
+        if step["step"] != expected_step_number:
+            return (
+                node_index,
+                False,
+                steps_checked,
+                index
+            )
+
+        # Check that this step points to the hash
+        # of the previous step.
+        if step["previous_hash"] != previous_hash:
+            return (
+                node_index,
+                False,
+                steps_checked,
+                index
+            )
+
+        # Recalculate this step's hash.
+        hash_data = (
+            previous_hash
+            + str(step["step"])
+            + str(step["data"])
+        )
+
+        expected_hash = utils.create_hash(
+            hash_data
+        )
+
+        # Compare the calculated hash with
+        # the hash stored in the transcript.
+        if step["hash"] != expected_hash:
+            return (
+                node_index,
+                False,
+                steps_checked,
+                index
+            )
+
+        previous_hash = step["hash"]
+        steps_checked += 1
+
+    return (
+        node_index,
+        True,
+        steps_checked,
+        None
+    )

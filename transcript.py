@@ -7,22 +7,22 @@ class Transcript:
     def __init__(self):
         self.sigma = secrets.token_bytes(32)
         self.steps = []
-        self.step_index = {}
         self.path_index = {}
         self.previous_hash = utils.create_hash(self.sigma)
 
     def add_step(self, data):
-        hash_data = self.previous_hash + str(data)
+
+        step_number = len(self.steps) + 1
+
+        hash_data = self.previous_hash + str(step_number) + str(data)
         current_hash = utils.create_hash(hash_data)
 
         self.steps.append({
+            "step": step_number,
             "data": data,
             "previous_hash": self.previous_hash,
             "hash": current_hash
         })
-
-        # One transcript step corresponds to one computation.
-        self.step_index[data["computation"]] = data
 
         key = (
         tuple(data["parent_path"]),
@@ -33,47 +33,8 @@ class Transcript:
 
         self.previous_hash = current_hash
 
-    def verify(self):
-
-        previous_hash = utils.create_hash(self.sigma)
-
-        for index, step in enumerate(self.steps):
-
-            if step["previous_hash"] != previous_hash:
-                print(
-                    f"[VERIFY] Step {index}: "
-                    f"previous hash mismatch"
-                )
-                return False
-
-            hash_data = (
-                previous_hash
-                + str(step["data"])
-            )
-
-            expected_hash = utils.create_hash(
-                hash_data
-            )
-
-            if step["hash"] != expected_hash:
-                print(
-                    f"[VERIFY] Step {index}: "
-                    f"hash mismatch"
-                )
-                return False
-
-            previous_hash = step["hash"]
-
-        print(
-            f"[VERIFY] Transcript valid "
-            f"({len(self.steps)} steps)"
-        )
-
-        return True
-
     @staticmethod
     def create_step_data(
-    computation,
     parent_path,
     parent_vertex,
     parent_lower_bound,
@@ -85,8 +46,6 @@ class Transcript:
     pruned
     ):
         return {
-            "computation": computation,
-
             "parent_path": parent_path[:],
             "parent_vertex": parent_vertex,
             "parent_lower_bound": parent_lower_bound,

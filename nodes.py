@@ -92,8 +92,6 @@ class Node:
         # total computational work.
         self.computations += temp_computation
 
-        if self.transcript is not None:
-            self.transcript.verify()
         # Return the number of computations performed and indicate
         # whether the shared TSP search has been completed.
         return temp_computation, finished

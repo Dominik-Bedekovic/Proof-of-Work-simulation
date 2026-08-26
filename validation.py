@@ -214,10 +214,6 @@ def proof_based_validation(
 
 def _validate_calculated_path(tsp, path, proposed_cost, transcript: Transcript):
 
-  
-
-    print("[VALIDATOR] Transcript hash chain is valid.")
-
     total_cost = 0
 
     for i in range(len(path) - 1):

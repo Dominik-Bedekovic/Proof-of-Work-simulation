@@ -2,16 +2,53 @@ from __future__ import annotations
 
 import utils
 import heapq
-from transcript import Transcript 
-
 from tspNode import TspNode
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from tspData import TspData
 
 
 class TspFunction():
+
+    @staticmethod
+    def greedy_tsp(matrix):
+
+        size = len(matrix)
+
+        path = [0]
+        current = 0
+        total_cost = 0
+
+        while len(path) < size:
+
+            best_city = None
+            best_edge = utils.inf
+
+            for city in range(size):
+
+                if city in path:
+                    continue
+
+                edge = matrix[current][city]
+
+                if edge < best_edge:
+                    best_edge = edge
+                    best_city = city
+
+            if best_city is None:
+                return utils.inf, []
+
+            total_cost += best_edge
+            path.append(best_city)
+            current = best_city
+
+        # Return to city 0.
+        final_edge = matrix[current][0]
+
+        if final_edge == utils.inf:
+            return utils.inf, []
+
+        total_cost += final_edge
+        path.append(0)
+
+        return total_cost, path
 
     @staticmethod
     def _make_tsp_matrix(size):
@@ -263,153 +300,3 @@ class TspFunction():
                     heapq.heappush(priority_queue, child)
 
         return best_cost >= proposed_cost
-
-    @staticmethod
-    def tsp_solver(tsp: TspData, search_rate, transcript=None):
-        # Obtain the priority queue containing nodes that still need
-        # to be explored.
-        priority_queue = tsp.priority_queue
-
-        # Number of cities in the TSP instance.
-        levels = tsp.tsp_root.size
-
-        # Count the number of processed search nodes.
-        computations = 0
-
-        # Process a limited number of nodes according to the
-        # simulated search rate of the current node.
-        for _ in range(search_rate):
-
-            # If the priority queue is empty, the entire search space
-            # has been processed and the optimal solution is known.
-            if not priority_queue:
-                return computations, True
-
-            # Select the node with the smallest lower-bound cost.
-            current_node: TspNode = heapq.heappop(priority_queue)
-
-            computations += 1
-
-            # If the lower bound is already worse than the best
-            # solution found so far, this branch can be pruned.
-            if current_node.cost >= tsp.best_cost:
-                continue
-
-            # Check whether the current node has visited all cities.
-            if current_node.visited == levels - 1:
-
-                # Add the final edge returning to the starting city.
-                final_edge = tsp.matrix[current_node.vertex][0]
-
-                # Skip the path if the return connection is unavailable.
-                if final_edge == utils.inf:
-                    continue
-
-                total_cost = (
-                    current_node.total_cost
-                    + final_edge
-                )
-
-                if transcript is not None:
-
-                    data = transcript.create_step_data(
-                        parent_path=current_node.path,
-                        parent_vertex=current_node.vertex,
-                        parent_lower_bound=current_node.cost,
-                        selected_neighbour=0,
-                        child_path=current_node.path + [0],
-                        edge_cost=final_edge,
-                        reduction_cost=None,
-                        child_lower_bound=None,
-                        pruned=False
-                    )
-
-                    print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
-                    print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
-                    print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
-                    print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
-                    print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
-                    print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
-                    print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
-                    
-                    transcript.add_step(data)
-                    
-                    print(
-                        f"[TRANSCRIPT] Hash: "
-                        f"{transcript.steps[-1]['hash']}"
-                    )
-                    
-
-                # Update the best known solution if this tour is shorter.
-                if total_cost < tsp.best_cost:
-                    tsp.best_cost = total_cost
-                    tsp.best_path = current_node.path + [0]
-                    tsp.best_node = current_node
-
-                continue
-
-            # Generate children for every unvisited neighbouring city.
-            for neighbour_node in range(current_node.size):
-
-                if (
-                    current_node.matrix[
-                        current_node.vertex
-                    ][neighbour_node] != utils.inf
-                ):
-
-                    # Check whether the city has already been visited.
-                    visited = neighbour_node in current_node.path
-
-                    if visited:
-                        continue
-
-                    # Create a new branch of the search tree.
-                    child = TspFunction._create_child(
-                        current_node,
-                        tsp.matrix,
-                        current_node.vertex,
-                        neighbour_node
-                    )
-
-                    if transcript is not None:
-
-                        edge_cost = tsp.matrix[current_node.vertex][neighbour_node]
-                        reduction_cost = child.cost - current_node.cost - edge_cost
-
-                        if transcript is not None:
-
-                            data = transcript.create_step_data(
-                                parent_path=current_node.path,
-                                parent_vertex=current_node.vertex,
-                                parent_lower_bound=current_node.cost,
-                                selected_neighbour=neighbour_node,
-                                child_path=child.path,
-                                edge_cost=edge_cost,
-                                reduction_cost=reduction_cost,
-                                child_lower_bound=child.cost,
-                                pruned=child.cost >= tsp.best_cost
-                            )
-
-
-                        print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
-                        print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
-                        print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
-                        print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
-                        print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
-                        print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
-                        print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
-
-                        transcript.add_step(data)
-
-                        print(
-                            f"[TRANSCRIPT] Hash: "
-                            f"{transcript.steps[-1]['hash']}"
-                        )
-
-                    # Only add the child to the priority queue if its
-                    # lower bound can still lead to a better solution.
-                    if child.cost < tsp.best_cost:
-                        heapq.heappush(priority_queue, child)
-
-        # The search was not completed during this execution.
-        return computations, False

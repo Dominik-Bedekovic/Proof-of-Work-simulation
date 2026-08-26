@@ -1,10 +1,13 @@
 from nodes import Node
 import powWorker
+import tspWorker
+from tspNode import TspNode
 import utils
 import benchmark
 import multiprocessing
+import time
 from blockData import BlockData
-from blockFunctions import BlockFunctions
+from tspFunctions import TspFunction
 from validation import council_validation
 from validation import proof_based_validation
 
@@ -262,164 +265,223 @@ class MainFunctions:
 
                 return total_mining_count
 
-    def multiple_node_pouw_tsp(self):
+    def multiple_node_pouw(self):
 
-        print("PoUW TSP simulation: \n")
+        print("\nParallel TSP solver:\n")
 
-        # Display the TSP distance matrix shared by all nodes.
-        print("Matrix: ")
-        for row in Node.tsp.matrix:
-            print(row)
+        matrix = Node.tsp.matrix
+        size = Node.tsp.size
 
-        # Display the simulated search rate of every node.
-        print("\nSearch rate: ")
-        for node in self.node_list:
+        manager = multiprocessing.Manager()
+
+        # -------------------------------------------------
+        # Shared state
+        # -------------------------------------------------
+
+        best_cost = manager.Value(
+            'd',
+            float('inf')
+        )
+
+        best_path = manager.list()
+
+        best_lock = manager.Lock()
+
+        branch_queue = manager.list()
+
+        queue_lock = manager.Lock()
+
+        active_workers = manager.Value(
+            'i',
+            0
+        )
+
+        finished = manager.Event()
+
+        result_queue = manager.Queue()
+
+        # -------------------------------------------------
+        # STEP 1:
+        # Get an initial solution using greedy search.
+        #
+        # This is our UPPER BOUND.
+        # -------------------------------------------------
+
+        greedy_cost, greedy_path = TspFunction.greedy_tsp(
+            matrix
+        )
+
+        best_cost.value = greedy_cost
+        best_path[:] = greedy_path
+
+        print(
+            f"Greedy solution: {greedy_path}"
+        )
+
+        print(
+            f"Initial upper bound: {greedy_cost}"
+        )
+
+        # -------------------------------------------------
+        # STEP 2:
+        # Create the root node.
+        # -------------------------------------------------
+
+        root = TspNode(size)
+
+        root.matrix = [
+            row[:]
+            for row in Node.tsp.reduced_matrix
+        ]
+
+        root.path = [0]
+        root.vertex = 0
+        root.visited = 0
+        root.cost = Node.tsp.cost
+        root.total_cost = 0
+
+        # -------------------------------------------------
+        # STEP 3:
+        # Generate the initial branches.
+        #
+        # All workers will use the SAME shared queue.
+        # -------------------------------------------------
+
+        for city in range(1, size):
+
+            branch = TspFunction._create_child(
+                root,
+                matrix,
+                0,
+                city
+            )
+
+            if branch.cost >= best_cost.value:
+
+                print(
+                    f"Initial branch {branch.path} "
+                    f"PRUNED "
+                    f"LB={branch.cost} "
+                    f">= UB={best_cost.value}"
+                )
+
+                continue
+
+            branch_queue.append(branch)
+
             print(
-                f"{node.name}: {node.search_rate}",
+                f"Initial branch {branch.path} "
+                f"LB={branch.cost}"
+            )
+
+        # -------------------------------------------------
+        # STEP 4:
+        # Start exactly one worker per node.
+        #
+        # Every worker takes branches from the SAME queue.
+        # -------------------------------------------------
+
+        processes = []
+
+        worker_count = len(self.node_list)
+
+        for node_index in range(worker_count):
+
+            process = multiprocessing.Process(
+                target=tspWorker.tsp_worker,
+                args=(
+                    node_index,
+                    matrix,
+                    size,
+                    branch_queue,
+                    queue_lock,
+                    best_cost,
+                    best_path,
+                    best_lock,
+                    active_workers,
+                    finished,
+                    result_queue
+                )
+            )
+
+            processes.append(process)
+
+        # -------------------------------------------------
+        # STEP 5:
+        # Start workers.
+        # -------------------------------------------------
+
+        start_time = time.perf_counter()
+
+        for process in processes:
+            process.start()
+
+        # -------------------------------------------------
+        # STEP 6:
+        # Wait for workers.
+        # -------------------------------------------------
+
+        for process in processes:
+            process.join()
+
+        simulation_time = (
+            time.perf_counter()
+            - start_time
+        )
+
+        # -------------------------------------------------
+        # STEP 7:
+        # Collect computation counts.
+        # -------------------------------------------------
+
+        computations = []
+
+        while not result_queue.empty():
+
+            computations.append(
+                result_queue.get()
+            )
+
+        computations.sort()
+
+        total_computations = 0
+
+        print("\nParallel TSP result:")
+
+        print(
+            "Best path:",
+            list(best_path)
+        )
+
+        print(
+            "Best cost:",
+            best_cost.value
+        )
+
+        print("\nComputations:")
+
+        for node_index, count in computations:
+
+            print(
+                f"node{node_index + 1}: {count}",
                 end="\t"
             )
 
-        # Continue until the TSP search has been completed.
-        while not Node.found:
+            total_computations += count
 
-            results = []
+        print(
+            "\nTotal computations:",
+            total_computations
+        )
 
-            # Each node processes a batch of nodes from the shared
-            # Branch and Bound search tree.
-            for node in self.node_list:
+        print(
+            f"Simulation time: "
+            f"{simulation_time:.2f}s"
+        )
 
-                computations, finished = node.pouw_mining()
+        manager.shutdown()
 
-                results.append(
-                    (computations, finished)
-                )
-
-                # The search is finished when the priority queue
-                # has been exhausted.
-                if finished:
-                    Node.found = True
-
-            if Node.found:
-
-                # Find the node that completed the TSP search.
-                finishing_node_index = next(
-                    i for i, result in enumerate(results)
-                    if result[1]
-                )
-
-                finishing_node = self.node_list[finishing_node_index]
-
-                finishing_node_computations = (
-                    results[finishing_node_index][0]
-                )
-
-                # Calculate the fraction of the final simulation
-                # step required by the winning node.
-                winner_time = (
-                    finishing_node_computations / finishing_node.search_rate
-                )
-
-                # Remove the unused portion of the final batch from
-                # nodes that did not finish the search.
-                if finishing_node_computations > 0:
-                    for i, node in enumerate(
-                        self.node_list[:len(results)]
-                    ):
-
-                        if node is not finishing_node:
-
-                            computation_done = results[i][0]
-
-                            final_batch = round(
-                                node.search_rate
-                                * winner_time
-                            )
-
-                            node.computations -= (
-                                computation_done
-                                - final_batch
-                            )
-
-                # Add the fractional final step to the simulation time.
-                Node.simulation_time += winner_time
-
-                print(
-                    "\nBest path:",
-                    self.node_list[0].tsp.best_path
-                )
-
-                print(
-                    "Best cost:",
-                    self.node_list[0].tsp.best_cost
-                )
-
-                winning_node = self.node_list[0].tsp.best_node
-
-                print("\nWinning TSP node:")
-                print("Name:", finishing_node.name)
-                print("Path:", winning_node.path)
-                print("Cost:", winning_node.cost)
-                print("Total cost:", winning_node.total_cost)
-                print("Vertex:", winning_node.vertex)
-                print("Visited:", winning_node.visited)
-
-                print("\nComputations:")
-
-                for node in self.node_list:
-                    print(
-                        f"{node.name}: {node.computations}",
-                        end="\t"
-                    )
-
-                # Calculate the total computational work performed
-                # by all nodes.
-                total_computations = sum(
-                    node.computations
-                    for node in self.node_list
-                )
-
-                print(
-                    "\n\nTotal computations:",
-                    total_computations
-                )
-
-                print(
-                    f"Simulation time: "
-                    f"{Node.simulation_time:.2f}s"
-                )
-
-                print("\n\n")
-
-                """
-                council = [
-                                    node for node in self.node_list
-                                    if node is not finishing_node
-                                ]
-                
-                                result = council_validation(
-                                            self.node_list[0].tsp,
-                                            council,
-                                            self.node_list[0].tsp.best_path,
-                                            self.node_list[0].tsp.best_cost
-                                        )
-                
-                                print(f"Council result: {result}")
-                
-                """
-
-                proof_based_validation(
-                    self.node_list[0].tsp,
-                    self.node_list[0].tsp.best_path,
-                    self.node_list[0].tsp.best_cost,
-                    Node.transcript
-                )
-
-                return total_computations
-
-            # If the search is not finished, advance the simulation
-            # by one complete time step.
-            Node.simulation_time += 1
-
+        return total_computations
 
     def run_simulation(self):
 
@@ -431,7 +493,7 @@ class MainFunctions:
         # Define one complete PoUW simulation run.
         def run_pouw():
             self.reset_simulation()
-            return self.multiple_node_pouw_tsp()
+            return self.multiple_node_pouw()
 
         # Repeat the PoW simulation and calculate its average
         # computational work.

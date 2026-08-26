@@ -1,25 +1,30 @@
 import time
+import heapq
 
 from nodes import Node
 from blockFunctions import BlockFunctions
 from tspData import TspData
+from tspNode import TspNode
 from tspFunctions import TspFunction
 
+import utils
 
-# Measures the SHA-256 hashing rate used as the computational
-# workload for the PoW simulation.
-def benchmark_pow(num_hashes=100000):
 
-    # Create a node whose block data and mining data are used
-    # as input for the benchmark.
+# Measures the SHA-256 hashing rate used as the
+# computational workload for the PoW simulation.
+def benchmark_pow(duration=1.0):
+
+    print("\n--- PoW benchmark ---")
+    print(f"Benchmark duration: {duration:.2f}s")
+
     benchmark_node = Node("benchmark")
 
-    # Start measuring the execution time of the benchmark.
+    hashes = 0
+
     start = time.perf_counter()
 
-    # Generate the specified number of block header hashes.
-    # Each hash represents one simulated PoW mining attempt.
-    for _ in range(num_hashes):
+    while time.perf_counter() - start < duration:
+
         BlockFunctions.create_header_hash(
             benchmark_node.blockData.previous_hash,
             benchmark_node.blockData.timestamp,
@@ -27,34 +32,150 @@ def benchmark_pow(num_hashes=100000):
             benchmark_node.nonce
         )
 
-        # Increment the nonce so that each iteration produces a different block header hash.
         benchmark_node.nonce += 1
+        hashes += 1
 
-    # Calculate the total time required to perform the hashing.
     elapsed = time.perf_counter() - start
+    hash_rate = hashes / elapsed
 
-    # Return the measured hashing rate in hashes per second.
-    return num_hashes / elapsed
+    print(f"Elapsed time: {elapsed:.4f}s")
+    print(f"Hashes performed: {hashes}")
+    print(f"Hash rate: {hash_rate:.2f} hashes/s")
+
+    return hash_rate
 
 
-# Measures the processing rate of the TSP Branch and Bound
-def benchmark_tsp_pouw(num_of_computations=10000):
+# Measures the Branch and Bound search-node processing rate
+# used as the computational workload for the PoUW simulation.
+def benchmark_tsp_pouw(duration=1.0, size=0):
 
-    # Generate a TSP problem containing 10 cities.
-    benchmark_tsp = TspData(size=10)
+    print("\n--- PoUW TSP benchmark ---")
+    print(f"Benchmark duration: {duration:.2f}s")
+    print(f"TSP size: {size} cities")
 
-    # Start measuring the execution time of the benchmark.
-    start = time.perf_counter()
+    # Create a TSP instance.
+    benchmark_tsp = TspData(size=size)
 
-    # Execute the TSP solver for the specified number of
-    # computational operations and record the number performed.
-    computations, _ = TspFunction.tsp_solver(
-        benchmark_tsp,
-        num_of_computations
+    # Obtain an initial feasible solution.
+    # This provides the upper bound.
+    best_cost, best_path = TspFunction.greedy_tsp(
+        benchmark_tsp.matrix
     )
 
-    # Calculate the total time required to perform the TSP computations.
-    elapsed = time.perf_counter() - start
+    print(f"Initial greedy cost: {best_cost}")
+    print(f"Initial greedy path: {best_path}")
 
-    # Return the measured TSP processing rate in operations per second.
-    return computations / elapsed
+    # Create the root node.
+    root = TspNode(benchmark_tsp.size)
+
+    root.matrix = [
+        row[:]
+        for row in benchmark_tsp.reduced_matrix
+    ]
+
+    root.path = [0]
+    root.vertex = 0
+    root.visited = 0
+    root.cost = benchmark_tsp.cost
+    root.total_cost = 0
+
+    # Create the initial branches.
+    priority_queue = []
+
+    for city in range(1, benchmark_tsp.size):
+
+        child = TspFunction._create_child(
+            root,
+            benchmark_tsp.matrix,
+            0,
+            city
+        )
+
+        if child.cost < best_cost:
+            heapq.heappush(
+                priority_queue,
+                child
+            )
+
+    print(
+        f"Initial branches in queue: "
+        f"{len(priority_queue)}"
+    )
+
+    computations = 0
+
+    # Start measuring only the actual B&B search.
+    start = time.perf_counter()
+
+    while (
+        priority_queue
+        and time.perf_counter() - start < duration
+    ):
+
+        current_node = heapq.heappop(
+            priority_queue
+        )
+
+        computations += 1
+
+        # Branch and Bound pruning.
+        if current_node.cost >= best_cost:
+            continue
+
+        # Check whether all cities have been visited.
+        if current_node.visited == benchmark_tsp.size - 1:
+
+            final_edge = benchmark_tsp.matrix[
+                current_node.vertex
+            ][0]
+
+            if final_edge == utils.inf:
+                continue
+
+            total_cost = (
+                current_node.total_cost
+                + final_edge
+            )
+
+            if total_cost < best_cost:
+                best_cost = total_cost
+
+            continue
+
+        # Expand the current search node.
+        for neighbour in range(current_node.size):
+
+            if current_node.matrix[
+                current_node.vertex
+            ][neighbour] == utils.inf:
+                continue
+
+            if neighbour in current_node.path:
+                continue
+
+            child = TspFunction._create_child(
+                current_node,
+                benchmark_tsp.matrix,
+                current_node.vertex,
+                neighbour
+            )
+
+            if child.cost < best_cost:
+                heapq.heappush(
+                    priority_queue,
+                    child
+                )
+
+    elapsed = time.perf_counter() - start
+    computation_rate = computations / elapsed
+
+    print(f"Elapsed time: {elapsed:.4f}s")
+    print(f"Computations performed: {computations}")
+    print(f"Final best cost: {best_cost}")
+    print(f"Remaining queue size: {len(priority_queue)}")
+    print(
+        f"Computation rate: "
+        f"{computation_rate:.2f} computations/s"
+    )
+
+    return computation_rate

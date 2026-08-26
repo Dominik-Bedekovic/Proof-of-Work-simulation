@@ -1,7 +1,10 @@
 from nodes import Node
+import powWorker
 import utils
 import benchmark
+import multiprocessing
 from blockData import BlockData
+from blockFunctions import BlockFunctions
 from validation import council_validation
 from validation import proof_based_validation
 
@@ -62,87 +65,186 @@ class MainFunctions:
             node = Node(f"node{i + 1}")
             self.node_list.append(node)
 
-
     def multiple_node_pow(self, block_hash_difficulty):
 
-        print("Pow simulation: \n")
+        print("PoW simulation:\n")
 
-        # Display the simulated hash rate of every node.
-        print("Hash rate: ")
+        print("Hash rate:")
         for node in self.node_list:
             print(
                 f"{node.name}: {node.hash_rate}",
                 end="\t"
             )
+
         print("\n")
 
-        # Continue until one of the nodes finds a valid hash.
-        while not Node.found:
+        with multiprocessing.Pool(
+            processes=len(self.node_list)
+        ) as pool:
 
-            # Each node performs one batch of hash attempts.
-            results = [
-                node.pow_mining(block_hash_difficulty)
-                for node in self.node_list
-            ]
+            while not Node.found:
 
-            # Identify nodes that found a valid hash during this step.
-            successful_nodes = [
-                (node, result)
-                for node, result in zip(self.node_list, results)
-                if result is not None
-            ]
+                arguments = [
+                    (
+                        node.nonce,
+                        node.coinbase["extra_nonce"],
+                        node.coinbase["reward"],
+                        node.merkle_root,
+                        node.hash_rate,
+                        node.blockData.previous_hash,
+                        node.blockData.timestamp,
+                        block_hash_difficulty,
+                        node.blockData.transactions
+                    )
+                    for node in self.node_list
+                ]
 
-            if successful_nodes:
-
-                # The first successful node is considered the finishing_node.
-                finishing_node, hashes = successful_nodes[0]
-
-                # Determine the fraction of the final simulation step
-                # that elapsed before the winning node found its hash.
-                final_hashes = (
-                    hashes - Node.simulation_time * finishing_node.hash_rate
+                results = pool.map(
+                    powWorker.pow_worker,
+                    arguments
                 )
+
+                # -------------------------------------------------
+                # Update every node with the work performed by its
+                # worker during this simulation second.
+                # -------------------------------------------------
+
+                for node, result in zip(
+                    self.node_list,
+                    results
+                ):
+
+                    if not result["found"]:
+
+                        node.nonce = result["nonce"]
+
+                        node.coinbase["extra_nonce"] = (
+                            result["extra_nonce"]
+                        )
+
+                        node.merkle_root = result["merkle_root"]
+
+                # -------------------------------------------------
+                # Check whether one or more workers found a hash.
+                # -------------------------------------------------
+
+                successful_nodes = [
+                    (index, result)
+                    for index, result in enumerate(results)
+                    if result["found"]
+                ]
+
+                if not successful_nodes:
+
+                    for node in self.node_list:
+                        node.mining_count += node.hash_rate
+
+                    Node.simulation_time += 1
+
+                    continue
+
+                # Nobody found a valid hash.
+                if not successful_nodes:
+
+                    Node.simulation_time += 1
+                    continue
+
+                # -------------------------------------------------
+                # A worker found a valid hash.
+                # -------------------------------------------------
+
+                winner_index, winner = successful_nodes[0]
+
+                finishing_node = self.node_list[winner_index]
+
+                hashes = winner["hashes"]
+
+                # -------------------------------------------------
+                # Calculate how much of this second elapsed.
+                # -------------------------------------------------
 
                 winner_time = (
-                    final_hashes / finishing_node.hash_rate
+                    hashes / finishing_node.hash_rate
                 )
 
-                # Remove the unused portion of the final batch from
-                # every node that did not find the winning hash.
+                # -------------------------------------------------
+                # Calculate how many hashes every node actually
+                # performed before the winner stopped the simulation.
+                # -------------------------------------------------
+
                 for node in self.node_list:
-                    if node is not finishing_node:
 
-                        full_batch = node.hash_rate
+                    work_done = round(
+                        node.hash_rate * winner_time
+                    )
 
-                        final_batch = round(
-                            node.hash_rate * winner_time
-                        )
+                    node.mining_count += work_done
 
-                        node.mining_count -= (
-                            full_batch - final_batch
-                        )
+                # -------------------------------------------------
+                # Save the winning state.
+                # -------------------------------------------------
 
-                print("finishing_node is:")
-                print("Name:", finishing_node.name)
-                print("Hashes:", hashes)
-                print(
-                    f"Time: "
-                    f"{round(hashes / finishing_node.hash_rate, 2)}s"
+                finishing_node.nonce = winner["nonce"]
+
+                finishing_node.coinbase["extra_nonce"] = (
+                    winner["extra_nonce"]
                 )
-                print("Hash:", finishing_node.header_hash)
+
+                finishing_node.merkle_root = (
+                    winner["merkle_root"]
+                )
+
+                finishing_node.header_hash = (
+                    winner["header_hash"]
+                )
+
+                # -------------------------------------------------
+                # Update simulation time.
+                # -------------------------------------------------
+
+                Node.simulation_time += winner_time
 
                 Node.found = True
 
-                print("\nMining count: ")
+                # -------------------------------------------------
+                # Output.
+                # -------------------------------------------------
+
+                print(
+                    "\nFinishing node:",
+                    finishing_node.name
+                )
+
+                print(
+                    "Hashes:",
+                    hashes
+                )
+
+                print(
+                    "Nonce:",
+                    winner["nonce"]
+                )
+
+                print(
+                    "Extra nonce:",
+                    winner["extra_nonce"]
+                )
+
+                print(
+                    "Hash:",
+                    winner["header_hash"]
+                )
+
+                print("\nMining count:")
 
                 for node in self.node_list:
+
                     print(
-                        f"{node.name}: {node.mining_count}",
+                        f"{node.name}: "
+                        f"{node.mining_count}",
                         end="\t"
                     )
 
-                # Calculate the total computational work performed
-                # by all nodes before the winning hash was found.
                 total_mining_count = sum(
                     node.mining_count
                     for node in self.node_list
@@ -153,23 +255,12 @@ class MainFunctions:
                     total_mining_count
                 )
 
-                # Add the fractional final step to the simulation time.
-                Node.simulation_time += winner_time
-
                 print(
                     "Simulation time:",
-                    Node.simulation_time,
-                    "s"
+                    Node.simulation_time
                 )
 
-                print("\n\n")
-
                 return total_mining_count
-
-            # If no node has found a solution, advance the simulation
-            # by one complete time step.
-            Node.simulation_time += 1
-
 
     def multiple_node_pouw_tsp(self):
 

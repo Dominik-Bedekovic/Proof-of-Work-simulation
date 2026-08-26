@@ -67,53 +67,17 @@ class Node:
         # by this node.
         self.computations = 0
 
+    def update_pow_state(self, result):
+        self.mining_count += result["hashes"]
 
-    def pow_mining(self, leading_zeros):
-        # Set the required number of leading zeros for a valid hash.
-        # This represents the difficulty of the pow mining sim 
-        self.zero_count = int(leading_zeros)
+        self.nonce = result["nonce"]
 
-        # Perform a batch of hash attempts according to the node's
-        # simulated hash rate.
-        for _ in range(self.hash_rate):
+        self.coinbase["extra_nonce"] = result["extra_nonce"]
 
-            # Mining count is used to track each node's work output
-            # through incrementing nonce
-            self.mining_count += 1
+        self.merkle_root = result["merkle_root"]
 
-            # Generate a block header hash using the shared block data
-            # and the node-specific Merkle root and nonce.
-            self.header_hash = BlockFunctions.create_header_hash(
-                self.blockData.previous_hash,
-                self.blockData.timestamp,
-                self.merkle_root,
-                self.nonce
-            )
-
-            # Check whether the generated hash satisfies the
-            # required difficulty.
-            if self.header_hash.startswith("0" * self.zero_count):
-                return self.mining_count
-
-            # If the 32-bit nonce range is exhausted, reset the nonce
-            # and increase the extra nonce to generate a new Merkle root.
-            elif self.nonce == pow(2, 32) - 1:
-                self.coinbase["extra_nonce"] += 1
-
-                self.merkle_root = BlockFunctions.calculate_merkle_root(
-                    self.blockData.transactions,
-                    self.coinbase
-                )
-
-                self.nonce = 0
-
-            # Otherwise, continue with the next nonce value.
-            else:
-                self.nonce += 1
-
-        # No valid hash was found during this simulation step.
-        return None
-
+        if result["found"]:
+            self.header_hash = result["header_hash"]
 
     def pouw_mining(self):
         # Process a batch of TSP search-tree nodes according to the

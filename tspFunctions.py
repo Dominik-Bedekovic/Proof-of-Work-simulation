@@ -220,9 +220,12 @@ class TspFunction():
 
         levels = tsp.tsp_root.size
 
+        computations = 0
+
         while priority_queue:
 
             current_node = heapq.heappop(priority_queue)
+            computations += 1
 
             if current_node.cost >= best_cost:
                 continue
@@ -262,7 +265,7 @@ class TspFunction():
                 if child.cost < best_cost:
                     heapq.heappush(priority_queue, child)
 
-        return best_cost >= proposed_cost
+        return best_cost >= proposed_cost, computations
 
     @staticmethod
     def tsp_solver(tsp: TspData, search_rate, transcript=None):

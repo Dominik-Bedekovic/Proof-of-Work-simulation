@@ -395,14 +395,16 @@ class MainFunctions:
                     if node is not finishing_node
                     ]
                 
-                result = council_validation(
+                result, validation_computations = council_validation(
                     self.node_list[0].tsp,
                     council,
                     self.node_list[0].tsp.best_path,
-                    self.node_list[0].tsp.best_cost
+                    self.node_list[0].tsp.best_cost,
+                    self.runs
                     )
                 
                 print(f"Council result: {result}")
+                print(f"Validation computations: {validation_computations}")
                 
                 """
                 proof_based_validation(

@@ -53,7 +53,7 @@ class Node:
 
         # Simulated number of hash operations the node can perform
         # during one simulation step.
-        self.hash_rate = utils.random_num(50, 200)
+        self.hash_rate = utils.random_num(100, 1000)
 
         # Total number of hash operations performed by the node.
         self.mining_count = 0

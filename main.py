@@ -22,7 +22,7 @@ num_of_cities = 11
 def main():
 
     validation_mode = 0
-    validation_mode |= PROOF_VALIDATION
+    validation_mode |= COUNCIL_VALIDATION
 
     print(f"Validation mode: {validation_mode}")
     print(f"Binary: {validation_mode:02b}")

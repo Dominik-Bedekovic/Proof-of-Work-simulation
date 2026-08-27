@@ -2,18 +2,10 @@ from tspData import TspData
 from tspFunctions import TspFunction
 from transcript import Transcript
 import multiprocessing
-import queue
 import utils
-import benchmark
 
 
-def council_validation(tsp: TspData, council, proposed_path, proposed_cost, runs, vote_treshold = 0.66):
-
-    validations_per_second = utils.average_runs(
-                benchmark.benchmark_validation,
-                runs
-            )
-    
+def council_validation(tsp: TspData, council, proposed_path, proposed_cost):
 
     arguments = [(tsp, proposed_path, proposed_cost) for _ in council]
 
@@ -28,11 +20,21 @@ def council_validation(tsp: TspData, council, proposed_path, proposed_cost, runs
         computations for valid, computations in results
     )
 
-    ultimate_votes, ultimate_voters, ultimate_computations = _parallel_branch_validation(tsp, council, proposed_cost)
+    initial_validation_time = max(
+        computations / node.validation_rate
+        for node, (_, computations)
+        in zip(council, results)
+    )
+
+    ultimate_votes, ultimate_voters, ultimate_computations, ultimate_validation_time = _parallel_branch_validation(tsp, council, proposed_cost)
 
     total_votes = len(council)
 
     total_computations = (initial_computations + ultimate_computations)
+
+    total_validation_time = (
+        initial_validation_time + ultimate_validation_time
+    )
 
     print("Council votes: ")
     print(f"Initial votes: {initial_votes}")
@@ -41,10 +43,25 @@ def council_validation(tsp: TspData, council, proposed_path, proposed_cost, runs
     print(f"Total votes: {total_votes}")
     print(f"Total computations: {total_computations}")
 
-    if not _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters, vote_treshold):
-        return False
+    print(
+        f"Initial validation time: "
+        f"{initial_validation_time:.4f}s"
+    )
 
-    return True, total_computations
+    print(
+        f"Ultimate validation time: "
+        f"{ultimate_validation_time:.4f}s"
+    )
+
+    print(
+        f"Total validation time: "
+        f"{total_validation_time:.4f}s"
+    )
+
+    if not _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
+        return False, total_computations, total_validation_time
+
+    return True, total_computations, total_validation_time
 
 def _validate_node(args):
 
@@ -108,6 +125,7 @@ def _parallel_branch_validation(tsp, council, proposed_cost):
             target=_branch_worker,
             args=(
                 node_index,
+                council[node_index].validation_rate,
                 tsp,
                 branch_slice,
                 result_queue,
@@ -129,8 +147,9 @@ def _parallel_branch_validation(tsp, council, proposed_cost):
     ultimate_votes = 0
     ultimate_voters = 0
     ultimate_computations = 0
+    ultimate_validation_time = 0
 
-    for node_index, valid, computations in results:
+    for node_index, valid, computations, validation_rate in results:
 
         ultimate_computations += computations
 
@@ -140,6 +159,15 @@ def _parallel_branch_validation(tsp, council, proposed_cost):
                 f"0 branches checked, NO VOTE"
             )
             continue
+
+        node_validation_time = (
+                    computations / validation_rate
+                )
+
+        ultimate_validation_time = max(
+            ultimate_validation_time,
+            node_validation_time
+        )
 
         ultimate_voters += 1
 
@@ -155,11 +183,13 @@ def _parallel_branch_validation(tsp, council, proposed_cost):
     return (
         ultimate_votes,
         ultimate_voters,
-        ultimate_computations
+        ultimate_computations,
+        ultimate_validation_time
     )
 
 def _branch_worker(
     node_index,
+    validation_rate,
     tsp,
     branches,
     result_queue,
@@ -185,26 +215,28 @@ def _branch_worker(
             valid = False
 
     result_queue.put(
-        (node_index, valid, computations)
+        (node_index, valid, computations, validation_rate)
     )
 
-def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters, vote_treshold):
+def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
 
     vote_ratio_initial = initial_votes / total_votes
 
     print(f"Initial vote ratio: {vote_ratio_initial}")
 
     if ultimate_voters == 0:
+        print("HEYYYY LISTTEEENNN")
         return False
 
     vote_ratio_ultimate = ultimate_votes / ultimate_voters
 
+
+    if vote_ratio_initial and vote_ratio_ultimate:
+        return True
+
     print(f"Ultimate vote ratio: {vote_ratio_ultimate}")
 
-    if (vote_ratio_initial < vote_treshold or vote_ratio_ultimate < vote_treshold):
-        return False
-
-    return True
+    return False
 
 def proof_based_validation(
     tsp,

@@ -65,6 +65,11 @@ class Node:
         ratio = getattr(Node, "pouw_pow_ratio", 1)
         self.search_rate = round(self.hash_rate * ratio)
 
+        validation_ratio = getattr(Node, "validation_pow_ratio", 0)
+        self.validation_rate = round(self.hash_rate * validation_ratio)
+
+
+
         # Total number of TSP search-node computations performed
         # by this node.
         self.computations = 0

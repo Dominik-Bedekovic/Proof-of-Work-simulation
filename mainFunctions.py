@@ -22,6 +22,8 @@ class MainFunctions:
         block_hash_difficulty,
         validation_mode
     ):
+
+        Node.validation_pow_ratio = 0
         # Store the main simulation parameters.
         self.num_of_nodes = num_of_nodes
         self.num_of_cities = num_of_cities
@@ -44,8 +46,24 @@ class MainFunctions:
             runs
         )
 
+        if (validation_mode & COUNCIL_VALIDATION):
+
+            validations_per_second = utils.average_runs(
+                benchmark.benchmark_validation,
+                runs
+            )
+
+            Node.validation_pow_ratio = (
+                validations_per_second / hashes_per_second
+            )
+            
+            print("Validation PoW Benchmark: ")
+            print(f"Computations/sec: {validations_per_second:.0f}\n")
+                                
+
         print("PoUW TSP Benchmark: ")
         print(f"Computations/sec: {computations_per_second:.0f}\n")
+
 
         # Calculate the ratio between PoUW computations and PoW hashes.
         # This ratio is used to convert a node's hash rate into its
@@ -53,6 +71,8 @@ class MainFunctions:
         Node.pouw_pow_ratio = (
             computations_per_second / hashes_per_second
         )
+
+        
 
         # Create the nodes used by both simulations.
         self.create_nodes()
@@ -412,18 +432,39 @@ class MainFunctions:
                         if node is not finishing_node
                     ]
 
-                    result, validation_computations = council_validation(
-                        self.node_list[0].tsp,
-                        council,
-                        self.node_list[0].tsp.best_path,
-                        self.node_list[0].tsp.best_cost,
-                        self.runs
+                    result, validation_computations, validation_time = (
+                        council_validation(
+                            self.node_list[0].tsp,
+                            council,
+                            self.node_list[0].tsp.best_path,
+                            self.node_list[0].tsp.best_cost,
+                        )
                     )
 
                     print(f"Council result: {result}")
+
                     print(
                         f"Validation computations: "
                         f"{validation_computations}"
+                    )
+
+                    print(
+                        f"Validation time: "
+                        f"{validation_time:.4f}s"
+                    )
+
+                    # Add council validation time to the total simulation time.
+                    total_computations += validation_computations
+                    Node.simulation_time += validation_time
+
+                    print(
+                        f"\nTotal computations: "
+                        f"{total_computations}"
+                    )
+
+                    print(
+                        f"Final simulation time: "
+                        f"{Node.simulation_time:.2f}s"
                     )
 
                 return total_computations

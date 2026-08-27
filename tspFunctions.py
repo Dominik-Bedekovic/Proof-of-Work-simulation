@@ -324,20 +324,20 @@ class TspFunction():
                         pruned=False
                     )
 
-                    print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
-                    print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
-                    print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
-                    print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
-                    print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
-                    print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
-                    print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
+                    #print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
+                    #print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
+                    #print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
+                    #print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
+                    #print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
+                    #print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
+                    #print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
                     
                     transcript.add_step(data)
                     
-                    print(
-                        f"[TRANSCRIPT] Hash: "
-                        f"{transcript.steps[-1]['hash']}"
-                    )
+                    #print(
+                    #    f"[TRANSCRIPT] Hash: "
+                    #    f"{transcript.steps[-1]['hash']}"
+                    #)
                     
 
                 # Update the best known solution if this tour is shorter.
@@ -391,20 +391,20 @@ class TspFunction():
                             )
 
 
-                        print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
-                        print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
-                        print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
-                        print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
-                        print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
-                        print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
-                        print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
+                        #print(f"[TRANSCRIPT] Parent path: {data['parent_path']}")
+                        #print(f"[TRANSCRIPT] Selected neighbour: {data['selected_neighbour']}")
+                        #print(f"[TRANSCRIPT] Edge cost: {data['edge_cost']}")
+                        #print(f"[TRANSCRIPT] Parent LB: {data['parent_lower_bound']}")
+                        #print(f"[TRANSCRIPT] Reduction cost: {data['reduction_cost']}")
+                        #print(f"[TRANSCRIPT] Child LB: {data['child_lower_bound']}")
+                        #print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
 
                         transcript.add_step(data)
 
-                        print(
-                            f"[TRANSCRIPT] Hash: "
-                            f"{transcript.steps[-1]['hash']}"
-                        )
+                        #print(
+                        #    f"[TRANSCRIPT] Hash: "
+                        #    f"{transcript.steps[-1]['hash']}"
+                        #)
 
                     # Only add the child to the priority queue if its
                     # lower bound can still lead to a better solution.

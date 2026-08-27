@@ -6,12 +6,13 @@ import utils
 class TspData:
 
     def __init__(self, size):
+
         # Store the number of cities in the TSP instance.
         self.size = size
 
         # Generate the distance matrix representing the complete graph.
         self.matrix = TspFunction._make_tsp_matrix(size)
-
+            
         # Reduce the initial matrix and calculate its reduction cost.
         # The reduction cost is used as the initial lower bound.
         self.reduced_matrix, self.cost = (

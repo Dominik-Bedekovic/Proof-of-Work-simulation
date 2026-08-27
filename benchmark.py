@@ -1,25 +1,30 @@
 import time
+import heapq
 
 from nodes import Node
 from blockFunctions import BlockFunctions
 from tspData import TspData
+from tspNode import TspNode
 from tspFunctions import TspFunction
 
+import utils
 
-# Measures the SHA-256 hashing rate used as the computational
-# workload for the PoW simulation.
-def benchmark_pow(num_hashes=100000):
 
-    # Create a node whose block data and mining data are used
-    # as input for the benchmark.
+# Measures the SHA-256 hashing rate used as the
+# computational workload for the PoW simulation.
+def benchmark_pow(duration=1.0):
+
+    print("\n--- PoW benchmark ---")
+    print(f"Benchmark duration: {duration:.2f}s")
+
     benchmark_node = Node("benchmark")
 
-    # Start measuring the execution time of the benchmark.
+    hashes = 0
+
     start = time.perf_counter()
 
-    # Generate the specified number of block header hashes.
-    # Each hash represents one simulated PoW mining attempt.
-    for _ in range(num_hashes):
+    while time.perf_counter() - start < duration:
+
         BlockFunctions.create_header_hash(
             benchmark_node.blockData.previous_hash,
             benchmark_node.blockData.timestamp,
@@ -27,34 +32,49 @@ def benchmark_pow(num_hashes=100000):
             benchmark_node.nonce
         )
 
-        # Increment the nonce so that each iteration produces a different block header hash.
         benchmark_node.nonce += 1
+        hashes += 1
 
-    # Calculate the total time required to perform the hashing.
     elapsed = time.perf_counter() - start
+    hash_rate = hashes / elapsed
 
-    # Return the measured hashing rate in hashes per second.
-    return num_hashes / elapsed
+    print(f"Elapsed time: {elapsed:.4f}s")
+    print(f"Hashes performed: {hashes}")
+    print(f"Hash rate: {hash_rate:.2f} hashes/s")
+
+    return hash_rate
 
 
-# Measures the processing rate of the TSP Branch and Bound
-def benchmark_tsp_pouw(num_of_computations=10000):
+# Measures the Branch and Bound search-node processing rate
+# used as the computational workload for the PoUW simulation.
+def benchmark_tsp_pouw(duration=1.0, size=11):
 
-    # Generate a TSP problem containing 10 cities.
-    benchmark_tsp = TspData(size=10)
+    print("\n--- PoUW TSP benchmark ---")
+    print(f"Benchmark duration: {duration:.2f}s")
+    print(f"TSP size: {size} cities")
 
-    # Start measuring the execution time of the benchmark.
+    
+
+    computations = 0
+
+    # Start measuring only the actual B&B search.
     start = time.perf_counter()
 
-    # Execute the TSP solver for the specified number of
-    # computational operations and record the number performed.
-    computations, _ = TspFunction.tsp_solver(
-        benchmark_tsp,
-        num_of_computations
+    while (time.perf_counter() - start < duration):
+
+        # Create a TSP instance.
+        benchmark_tsp = TspData(size=size)
+
+        computations, _ = TspFunction.tsp_solver(benchmark_tsp, 1000000)
+
+    elapsed = time.perf_counter() - start
+    computation_rate = computations / elapsed
+
+    print(f"Elapsed time: {elapsed:.4f}s")
+    print(f"Computations performed: {computations}")
+    print(
+        f"Computation rate: "
+        f"{computation_rate:.2f} computations/s"
     )
 
-    # Calculate the total time required to perform the TSP computations.
-    elapsed = time.perf_counter() - start
-
-    # Return the measured TSP processing rate in operations per second.
-    return computations / elapsed
+    return computation_rate

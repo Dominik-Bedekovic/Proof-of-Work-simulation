@@ -390,29 +390,28 @@ class MainFunctions:
 
                 print("\n\n")
 
-                """
                 council = [
-                                    node for node in self.node_list
-                                    if node is not finishing_node
-                                ]
+                    node for node in self.node_list
+                    if node is not finishing_node
+                    ]
                 
-                                result = council_validation(
-                                            self.node_list[0].tsp,
-                                            council,
-                                            self.node_list[0].tsp.best_path,
-                                            self.node_list[0].tsp.best_cost
-                                        )
+                result = council_validation(
+                    self.node_list[0].tsp,
+                    council,
+                    self.node_list[0].tsp.best_path,
+                    self.node_list[0].tsp.best_cost
+                    )
                 
-                                print(f"Council result: {result}")
+                print(f"Council result: {result}")
                 
                 """
-
                 proof_based_validation(
-                    self.node_list[0].tsp,
-                    self.node_list[0].tsp.best_path,
-                    self.node_list[0].tsp.best_cost,
-                    Node.transcript
-                )
+                                                    self.node_list[0].tsp,
+                                                    self.node_list[0].tsp.best_path,
+                                                    self.node_list[0].tsp.best_cost,
+                                                    Node.transcript
+                                
+                """
 
                 return total_computations
 

@@ -148,10 +148,12 @@ def start_gui():
         pady=(0, 20)
     )
 
-    benchmark_settings_frame.columnconfigure(
-        1,
-        weight=1
-    )
+    benchmark_settings_frame.columnconfigure(1, weight=1)
+
+
+    # ========================================================
+    # Number of Nodes
+    # ========================================================
 
     ttk.Label(
         benchmark_settings_frame,
@@ -164,51 +166,46 @@ def start_gui():
         pady=10
     )
 
-    nodes_frame = ttk.Frame(
-        benchmark_settings_frame
+    nodes = tk.IntVar(value=5)
+
+    nodes_value_label = ttk.Label(
+        benchmark_settings_frame,
+        text="5"
     )
 
-    nodes_frame.grid(
+    nodes_value_label.grid(
+        row=0,
+        column=2,
+        padx=(10, 5)
+    )
+
+
+    def update_nodes(value):
+        nodes_value_label.config(
+            text=str(int(float(value)))
+        )
+
+
+    nodes_scale = ttk.Scale(
+        benchmark_settings_frame,
+        from_=1,
+        to=20,
+        orient="horizontal",
+        variable=nodes,
+        command=update_nodes
+    )
+
+    nodes_scale.grid(
         row=0,
         column=1,
-        sticky="w",
+        sticky="ew",
         padx=10
     )
 
-    nodes = tk.IntVar(value=4)
 
-    ttk.Radiobutton(
-        nodes_frame,
-        text="3",
-        variable=nodes,
-        value=3
-    ).grid(
-        row=0,
-        column=0,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        nodes_frame,
-        text="4",
-        variable=nodes,
-        value=4
-    ).grid(
-        row=0,
-        column=1,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        nodes_frame,
-        text="5",
-        variable=nodes,
-        value=5
-    ).grid(
-        row=0,
-        column=2,
-        padx=15
-    )
+    # ========================================================
+    # Number of Runs
+    # ========================================================
 
     ttk.Label(
         benchmark_settings_frame,
@@ -221,51 +218,42 @@ def start_gui():
         pady=10
     )
 
-    runs_frame = ttk.Frame(
-        benchmark_settings_frame
+    runs = tk.IntVar(value=5)
+
+    runs_value_label = ttk.Label(
+        benchmark_settings_frame,
+        text="5"
     )
 
-    runs_frame.grid(
+    runs_value_label.grid(
+        row=1,
+        column=2,
+        padx=(10, 5)
+    )
+
+
+    def update_runs(value):
+        runs_value_label.config(
+            text=str(int(float(value)))
+        )
+
+
+    runs_scale = ttk.Scale(
+        benchmark_settings_frame,
+        from_=1,
+        to=10,
+        orient="horizontal",
+        variable=runs,
+        command=update_runs
+    )
+
+    runs_scale.grid(
         row=1,
         column=1,
-        sticky="w",
+        sticky="ew",
         padx=10
     )
 
-    runs = tk.IntVar(value=10)
-
-    ttk.Radiobutton(
-        runs_frame,
-        text="5",
-        variable=runs,
-        value=5
-    ).grid(
-        row=0,
-        column=0,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        runs_frame,
-        text="10",
-        variable=runs,
-        value=10
-    ).grid(
-        row=0,
-        column=1,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        runs_frame,
-        text="20",
-        variable=runs,
-        value=20
-    ).grid(
-        row=0,
-        column=2,
-        padx=15
-    )
 
     # ========================================================
     # PoW settings
@@ -290,9 +278,14 @@ def start_gui():
         weight=1
     )
 
+
+    # ========================================================
+    # Leading zeros
+    # ========================================================
+
     ttk.Label(
         pow_settings_frame,
-        text="Difficulty"
+        text="Leading Zeros"
     ).grid(
         row=0,
         column=0,
@@ -301,51 +294,42 @@ def start_gui():
         pady=10
     )
 
-    difficulty_frame = ttk.Frame(
-        pow_settings_frame
+    difficulty = tk.IntVar(value=6)
+
+    difficulty_value_label = ttk.Label(
+        pow_settings_frame,
+        text="6"
     )
 
-    difficulty_frame.grid(
+    difficulty_value_label.grid(
+        row=0,
+        column=2,
+        padx=(10, 5)
+    )
+
+
+    def update_difficulty(value):
+        difficulty_value_label.config(
+            text=str(int(float(value)))
+        )
+
+
+    difficulty_scale = ttk.Scale(
+        pow_settings_frame,
+        from_=1,
+        to=32,
+        orient="horizontal",
+        variable=difficulty,
+        command=update_difficulty
+    )
+
+    difficulty_scale.grid(
         row=0,
         column=1,
-        sticky="w",
+        sticky="ew",
         padx=10
     )
 
-    difficulty = tk.IntVar(value=4)
-
-    ttk.Radiobutton(
-        difficulty_frame,
-        text="Low",
-        variable=difficulty,
-        value=2
-    ).grid(
-        row=0,
-        column=0,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        difficulty_frame,
-        text="Medium",
-        variable=difficulty,
-        value=4
-    ).grid(
-        row=0,
-        column=1,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        difficulty_frame,
-        text="High",
-        variable=difficulty,
-        value=6
-    ).grid(
-        row=0,
-        column=2,
-        padx=15
-    )
 
     # ========================================================
     # PoUW settings
@@ -370,10 +354,14 @@ def start_gui():
         weight=1
     )
 
+
+    # ========================================================
+    # Number of cities
+    # ========================================================
+
     ttk.Label(
         pouw_settings_frame,
-        text="Number of Cities",
-        width=18
+        text="Number of Cities"
     ).grid(
         row=0,
         column=0,
@@ -382,56 +370,50 @@ def start_gui():
         pady=10
     )
 
-    cities_frame = ttk.Frame(
-        pouw_settings_frame
+    cities = tk.IntVar(value=12)
+
+    cities_value_label = ttk.Label(
+        pouw_settings_frame,
+        text="12"
     )
 
-    cities_frame.grid(
+    cities_value_label.grid(
+        row=0,
+        column=2,
+        padx=(10, 5)
+    )
+
+
+    def update_cities(value):
+        cities_value_label.config(
+            text=str(int(float(value)))
+        )
+
+
+    cities_scale = ttk.Scale(
+        pouw_settings_frame,
+        from_=3,
+        to=20,
+        orient="horizontal",
+        variable=cities,
+        command=update_cities
+    )
+
+    cities_scale.grid(
         row=0,
         column=1,
-        sticky="w",
+        sticky="ew",
         padx=10
     )
 
-    cities = tk.IntVar(value=9)
 
-    ttk.Radiobutton(
-        cities_frame,
-        text="7",
-        variable=cities,
-        value=7
-    ).grid(
-        row=0,
-        column=0,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        cities_frame,
-        text="9",
-        variable=cities,
-        value=9
-    ).grid(
-        row=0,
-        column=1,
-        padx=15
-    )
-
-    ttk.Radiobutton(
-        cities_frame,
-        text="11",
-        variable=cities,
-        value=11
-    ).grid(
-        row=0,
-        column=2,
-        padx=15
-    )
+    # ========================================================
+    # Verification
+    # ========================================================
 
     ttk.Label(
         pouw_settings_frame,
-        text="Verification",
-        width=18
+        text="Verification"
     ).grid(
         row=1,
         column=0,
@@ -447,6 +429,7 @@ def start_gui():
     verification_frame.grid(
         row=1,
         column=1,
+        columnspan=2,
         sticky="w",
         padx=10
     )
@@ -461,12 +444,12 @@ def start_gui():
     ).grid(
         row=0,
         column=0,
-        padx=15
+        padx=(0, 15)
     )
 
     ttk.Radiobutton(
         verification_frame,
-        text="Proof validation",
+        text="Proof Validation",
         variable=validation,
         value="proof"
     ).grid(
@@ -477,7 +460,7 @@ def start_gui():
 
     ttk.Radiobutton(
         verification_frame,
-        text="Council validation",
+        text="Council Validation",
         variable=validation,
         value="council"
     ).grid(

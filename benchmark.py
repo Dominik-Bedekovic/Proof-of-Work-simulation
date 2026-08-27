@@ -2,9 +2,14 @@ from nodes import Node
 from blockFunctions import BlockFunctions
 from tspData import TspData
 from tspFunctions import TspFunction
+from transcript import Transcript
 import validation
 import utils
 import time
+
+NO_VALIDATION = 0b00
+PROOF_VALIDATION = 0b01
+COUNCIL_VALIDATION = 0b10
 
 # Measures the SHA-256 hashing rate used as the
 # computational workload for the PoW simulation.
@@ -118,10 +123,6 @@ def benchmark_validation(duration=1.0, size=0):
     print(f"Validation rate: {validation_rate:.2f} validations/s")
 
     return validation_rate
-
-import time
-from transcript import Transcript
-
 
 def benchmark_transcript(duration=1.0):
 

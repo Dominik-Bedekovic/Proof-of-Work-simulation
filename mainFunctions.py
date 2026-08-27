@@ -1,18 +1,29 @@
 from nodes import Node
+
 import powWorker
 import utils
 import benchmark
 import multiprocessing
+
 from blockData import BlockData
+
 from validation import council_validation
 from validation import proof_based_validation
 
+
+# ---------------------------------------------------------
 # Validation modes
+# ---------------------------------------------------------
+
 NO_VALIDATION = 0b00
 PROOF_VALIDATION = 0b01
 COUNCIL_VALIDATION = 0b10
 
+
+
 class MainFunctions:
+
+    benchmarks_done = False
 
     def __init__(
         self,
@@ -20,158 +31,267 @@ class MainFunctions:
         num_of_cities,
         runs,
         block_hash_difficulty,
-        validation_mode
+        validation_mode,
     ):
 
+        # -------------------------------------------------
+        # Reset shared ratios.
+        # -------------------------------------------------
+
+        Node.pouw_pow_ratio = 0
         Node.validation_pow_ratio = 0
         Node.transcript_pouw_ratio = 0
         Node.path_validation_pow_ratio = 0
         Node.hash_validation_pow_ratio = 0
-        # Store the main simulation parameters.
+
+        # -------------------------------------------------
+        # Store simulation parameters.
+        # -------------------------------------------------
+
         self.num_of_nodes = num_of_nodes
         self.num_of_cities = num_of_cities
         self.runs = runs
         self.block_hash_difficulty = block_hash_difficulty
         self.validation_mode = validation_mode
 
-        # Measure the average PoW hash rate over multiple benchmark runs.
-        hashes_per_second = utils.average_runs(
-            benchmark.benchmark_pow,
-            runs
+        # -------------------------------------------------
+        # Run benchmarks once.
+        #
+        # These values are then reused by every simulation
+        # run. We do NOT benchmark again when reset_simulation()
+        # is called.
+        # -------------------------------------------------
+
+        if not MainFunctions.benchmarks_done:
+            self.run_benchmarks()
+
+        # -------------------------------------------------
+        # Create nodes.
+        # -------------------------------------------------
+
+        self.create_nodes()
+
+    def run_benchmarks(self):
+
+        print("\n========================================")
+        print("Running benchmarks")
+        print("========================================\n")
+
+        MainFunctions.hashes_per_second = (
+            utils.average_runs(
+                benchmark.benchmark_pow,
+                self.runs
+            )
         )
 
-        print("PoW Benchmark: ")
-        print(f"Hashes/sec: {hashes_per_second:.0f}\n")
-
-        # Measure the average PoUW TSP computation rate.
-        computations_per_second = utils.average_runs(
-            benchmark.benchmark_tsp_pouw,
-            runs
+        print("PoW Benchmark:")
+        print(
+            f"Hashes/sec: "
+            f"{MainFunctions.hashes_per_second:.0f}\n"
         )
 
-        if (validation_mode & COUNCIL_VALIDATION):
+        MainFunctions.computations_per_second = (
+            utils.average_runs(
+                lambda: benchmark.benchmark_tsp_pouw(
+                    size=self.num_of_cities
+                ),
+                self.runs
+            )
+        )
 
-            validations_per_second = utils.average_runs(
-                benchmark.benchmark_validation,
-                runs
+        print("PoUW TSP Benchmark:")
+        print(
+            f"Computations/sec: "
+            f"{MainFunctions.computations_per_second:.0f}\n"
+        )
+
+        # ---------------------------------------------
+        # PoUW / PoW ratio
+        # ---------------------------------------------
+
+        Node.pouw_pow_ratio = (
+            MainFunctions.computations_per_second
+            / MainFunctions.hashes_per_second
+        )
+
+        print(
+            f"PoUW/PoW ratio: "
+            f"{Node.pouw_pow_ratio:.6f}\n"
+        )
+
+        # ---------------------------------------------
+        # Council validation
+        # ---------------------------------------------
+
+        if self.validation_mode & COUNCIL_VALIDATION:
+            MainFunctions.validations_per_second = (
+                utils.average_runs(
+                    lambda: benchmark.benchmark_validation(
+                        size=self.num_of_cities
+                    ),
+                    self.runs
+                )
             )
 
             Node.validation_pow_ratio = (
-                validations_per_second / hashes_per_second
+                MainFunctions.validations_per_second
+                / MainFunctions.hashes_per_second
             )
-            
-            print("Validation PoW Benchmark: ")
-            print(f"Computations/sec: {validations_per_second:.0f}\n")
-                                
 
-        print("PoUW TSP Benchmark: ")
-        print(f"Computations/sec: {computations_per_second:.0f}\n")
+            print("Council Validation Benchmark:")
+            print(
+                f"Validations/sec: "
+                f"{MainFunctions.validations_per_second:.0f}"
+            )
 
-        if validation_mode & PROOF_VALIDATION:
+            print(
+                f"Validation/PoW ratio: "
+                f"{Node.validation_pow_ratio:.6f}\n"
+            )
 
-            # --------------------------------
-            # Transcript benchmark
-            # --------------------------------
+        # ---------------------------------------------
+        # Transcript
+        # ---------------------------------------------
 
-            transcript_per_second = utils.average_runs(
-                benchmark.benchmark_transcript,
-                runs
+        if self.validation_mode & PROOF_VALIDATION:
+            MainFunctions.transcript_per_second = (
+                utils.average_runs(
+                    benchmark.benchmark_transcript,
+                    self.runs
+                )
             )
 
             Node.transcript_pouw_ratio = (
-                transcript_per_second / computations_per_second
+                MainFunctions.transcript_per_second
+                / MainFunctions.computations_per_second
             )
 
             print("Transcript Benchmark:")
             print(
                 f"Transcript steps/sec: "
-                f"{transcript_per_second:.0f}"
+                f"{MainFunctions.transcript_per_second:.0f}"
             )
+
             print(
-                f"Transcript/PoW ratio: "
+                f"Transcript/PoUW ratio: "
                 f"{Node.transcript_pouw_ratio:.6f}\n"
             )
 
-            # --------------------------------
-            # Path validation benchmark
-            # --------------------------------
+        # ---------------------------------------------
+        # Path validation
+        # ---------------------------------------------
 
-            path_validation_per_second = utils.average_runs(
-                benchmark.benchmark_path_validation,
-                runs
+            MainFunctions.path_validation_per_second = (
+                utils.average_runs(
+                    lambda: benchmark.benchmark_path_validation(
+                        size=self.num_of_cities
+                    ),
+                    self.runs
+                )
             )
 
             Node.path_validation_pow_ratio = (
-                path_validation_per_second / hashes_per_second
+                MainFunctions.path_validation_per_second
+                / MainFunctions.hashes_per_second
             )
 
             print("Path Validation Benchmark:")
             print(
                 f"Validations/sec: "
-                f"{path_validation_per_second:.0f}"
+                f"{MainFunctions.path_validation_per_second:.0f}"
             )
+
             print(
                 f"Path validation/PoW ratio: "
                 f"{Node.path_validation_pow_ratio:.6f}\n"
             )
 
-            # --------------------------------
-            # Hash validation benchmark
-            # --------------------------------
+        # ---------------------------------------------
+        # Hash validation
+        # ---------------------------------------------
 
-            hash_validation_per_second = utils.average_runs(
-                benchmark.benchmark_hash_validation,
-                runs
+            MainFunctions.hash_validation_per_second = (
+                utils.average_runs(
+                    lambda: benchmark.benchmark_hash_validation(
+                        steps=1000
+                    ),
+                    self.runs
+                )
             )
 
             Node.hash_validation_pow_ratio = (
-                hash_validation_per_second / hashes_per_second
+                MainFunctions.hash_validation_per_second
+                / MainFunctions.hashes_per_second
             )
 
             print("Hash Validation Benchmark:")
             print(
                 f"Steps/sec: "
-                f"{hash_validation_per_second:.0f}"
+                f"{MainFunctions.hash_validation_per_second:.0f}"
             )
+
             print(
                 f"Hash validation/PoW ratio: "
                 f"{Node.hash_validation_pow_ratio:.6f}\n"
             )
 
+            MainFunctions.benchmarks_done = True
 
-        # Calculate the ratio between PoUW computations and PoW hashes.
-        # This ratio is used to convert a node's hash rate into its
-        # corresponding PoUW search rate.
-        Node.pouw_pow_ratio = (
-            computations_per_second / hashes_per_second
-        )
+        print("========================================")
+        print("Benchmarks complete")
+        print("========================================\n")
 
-        
-
-        # Create the nodes used by both simulations.
-        self.create_nodes()
-
+    # =====================================================
+    # CREATE NODES
+    # =====================================================
 
     def create_nodes(self):
 
-        # Generate the shared TSP problem for all PoUW nodes.
-        Node.initialize_tsp(self.num_of_cities)
-        if (self.validation_mode & PROOF_VALIDATION):
+        # ---------------------------------------------
+        # Generate the shared TSP problem.
+        # ---------------------------------------------
+
+        Node.initialize_tsp(
+            self.num_of_cities
+        )
+
+        # ---------------------------------------------
+        # Create transcript if proof validation is used.
+        # ---------------------------------------------
+
+        if self.validation_mode & PROOF_VALIDATION:
             Node.initialize_transcript()
+
+        # ---------------------------------------------
+        # Create nodes.
+        # ---------------------------------------------
 
         self.node_list = []
 
-        # Create the requested number of nodes.
         for i in range(self.num_of_nodes):
-            node = Node(f"node{i + 1}")
+
+            node = Node(
+                f"node{i + 1}"
+            )
+
             self.node_list.append(node)
 
-    def multiple_node_pow(self, block_hash_difficulty):
+
+    # =====================================================
+    # PROOF OF WORK
+    # =====================================================
+
+    def multiple_node_pow(
+        self,
+        block_hash_difficulty
+    ):
 
         print("PoW simulation:\n")
 
         print("Hash rate:")
+
         for node in self.node_list:
+
             print(
                 f"{node.name}: {node.hash_rate}",
                 end="\t"
@@ -186,6 +306,7 @@ class MainFunctions:
             while not Node.found:
 
                 arguments = [
+
                     (
                         node.nonce,
                         node.coinbase["extra_nonce"],
@@ -197,6 +318,7 @@ class MainFunctions:
                         block_hash_difficulty,
                         node.blockData.transactions
                     )
+
                     for node in self.node_list
                 ]
 
@@ -205,10 +327,9 @@ class MainFunctions:
                     arguments
                 )
 
-                # -------------------------------------------------
-                # Update every node with the work performed by its
-                # worker during this simulation second.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Update nodes.
+                # -----------------------------------------
 
                 for node, result in zip(
                     self.node_list,
@@ -223,69 +344,78 @@ class MainFunctions:
                             result["extra_nonce"]
                         )
 
-                        node.merkle_root = result["merkle_root"]
+                        node.merkle_root = (
+                            result["merkle_root"]
+                        )
 
-                # -------------------------------------------------
-                # Check whether one or more workers found a hash.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Find successful workers.
+                # -----------------------------------------
 
                 successful_nodes = [
+
                     (index, result)
+
                     for index, result in enumerate(results)
+
                     if result["found"]
                 ]
 
                 if not successful_nodes:
 
                     for node in self.node_list:
-                        node.mining_count += node.hash_rate
+
+                        node.mining_count += (
+                            node.hash_rate
+                        )
 
                     Node.simulation_time += 1
 
                     continue
 
-                # Nobody found a valid hash.
-                if not successful_nodes:
+                # -----------------------------------------
+                # Winning node.
+                # -----------------------------------------
 
-                    Node.simulation_time += 1
-                    continue
+                winner_index, winner = (
+                    successful_nodes[0]
+                )
 
-                # -------------------------------------------------
-                # A worker found a valid hash.
-                # -------------------------------------------------
-
-                winner_index, winner = successful_nodes[0]
-
-                finishing_node = self.node_list[winner_index]
+                finishing_node = (
+                    self.node_list[winner_index]
+                )
 
                 hashes = winner["hashes"]
 
-                # -------------------------------------------------
-                # Calculate how much of this second elapsed.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Fraction of final second.
+                # -----------------------------------------
 
                 winner_time = (
-                    hashes / finishing_node.hash_rate
+                    hashes
+                    / finishing_node.hash_rate
                 )
 
-                # -------------------------------------------------
-                # Calculate how many hashes every node actually
-                # performed before the winner stopped the simulation.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Count work performed by every node.
+                # -----------------------------------------
 
                 for node in self.node_list:
 
                     work_done = round(
-                        node.hash_rate * winner_time
+                        node.hash_rate
+                        * winner_time
                     )
 
                     node.mining_count += work_done
 
-                # -------------------------------------------------
-                # Save the winning state.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Save winning state.
+                # -----------------------------------------
 
-                finishing_node.nonce = winner["nonce"]
+                finishing_node.nonce = (
+                    winner["nonce"]
+                )
 
                 finishing_node.coinbase["extra_nonce"] = (
                     winner["extra_nonce"]
@@ -299,17 +429,19 @@ class MainFunctions:
                     winner["header_hash"]
                 )
 
-                # -------------------------------------------------
-                # Update simulation time.
-                # -------------------------------------------------
+                # -----------------------------------------
+                # Update simulation state.
+                # -----------------------------------------
 
-                Node.simulation_time += winner_time
+                Node.simulation_time += (
+                    winner_time
+                )
 
                 Node.found = True
 
-                # -------------------------------------------------
+                # -----------------------------------------
                 # Output.
-                # -------------------------------------------------
+                # -----------------------------------------
 
                 print(
                     "\nFinishing node:",
@@ -363,117 +495,197 @@ class MainFunctions:
 
                 return total_mining_count
 
+
+    # =====================================================
+    # PROOF OF USEFUL WORK
+    # =====================================================
+
     def multiple_node_pouw_tsp(self):
 
         print("PoUW TSP simulation: \n")
 
-        # Display the TSP distance matrix shared by all nodes.
-        print("Matrix: ")
+        print("Matrix:")
+
         for row in Node.tsp.matrix:
             print(row)
 
-        # Display the simulated search rate of every node.
-        print("\nSearch rate: ")
+        print("\nSearch rate:")
+
         for node in self.node_list:
+
             print(
-                f"{node.name}: {node.search_rate}",
+                f"{node.name}: "
+                f"{node.search_rate}",
                 end="\t"
             )
 
-        # Continue until the TSP search has been completed.
         while not Node.found:
 
             results = []
 
-            # Each node processes a batch of nodes from the shared
-            # Branch and Bound search tree.
+            # ---------------------------------------------
+            # Each node performs one batch.
+            # ---------------------------------------------
+
             for node in self.node_list:
 
-                computations, _, transcript_time, finished = node.pouw_mining()
+                (
+                    computations,
+                    _,
+                    transcript_time,
+                    finished
+                ) = node.pouw_mining()
 
                 results.append(
-                    (computations, transcript_time, finished)
+                    (
+                        computations,
+                        transcript_time,
+                        finished
+                    )
                 )
 
-                # The search is finished when the priority queue
-                # has been exhausted.
                 if finished:
                     Node.found = True
 
+            # ---------------------------------------------
+            # Search finished.
+            # ---------------------------------------------
+
             if Node.found:
 
-                # Find the node that completed the TSP search.
                 finishing_node_index = next(
-                    i for i, result in enumerate(results)
+
+                    i
+
+                    for i, result in enumerate(results)
+
                     if result[2]
                 )
 
-                finishing_node = self.node_list[finishing_node_index]
+                finishing_node = (
+                    self.node_list[
+                        finishing_node_index
+                    ]
+                )
 
                 finishing_node_computations = (
-                    results[finishing_node_index][0]
+                    results[
+                        finishing_node_index
+                    ][0]
                 )
 
-                # Calculate the fraction of the final simulation
-                # step required by the winning node.
+                # -----------------------------------------
+                # Final fraction of simulation step.
+                # -----------------------------------------
+
                 winner_time = (
-                    finishing_node_computations / finishing_node.search_rate + transcript_time
+
+                    finishing_node_computations
+                    / finishing_node.search_rate
+
+                    + transcript_time
                 )
 
-                # Remove the unused portion of the final batch from
-                # nodes that did not finish the search.
+                # -----------------------------------------
+                # Remove unused work.
+                # -----------------------------------------
+
                 if finishing_node_computations > 0:
+
                     for i, node in enumerate(
                         self.node_list[:len(results)]
                     ):
 
                         if node is not finishing_node:
 
-                            computation_done = results[i][0]
+                            computation_done = (
+                                results[i][0]
+                            )
 
                             final_batch = round(
+
                                 node.search_rate
                                 * winner_time
                             )
 
                             node.computations -= (
+
                                 computation_done
                                 - final_batch
                             )
 
-                # Add the fractional final step to the simulation time.
-                Node.simulation_time += winner_time
+                Node.simulation_time += (
+                    winner_time
+                )
+
+                # -----------------------------------------
+                # Output.
+                # -----------------------------------------
 
                 print(
                     "\nBest path:",
-                    self.node_list[0].tsp.best_path
+                    self.node_list[0]
+                    .tsp
+                    .best_path
                 )
 
                 print(
                     "Best cost:",
-                    self.node_list[0].tsp.best_cost
+                    self.node_list[0]
+                    .tsp
+                    .best_cost
                 )
 
-                winning_node = self.node_list[0].tsp.best_node
+                winning_node = (
+                    self.node_list[0]
+                    .tsp
+                    .best_node
+                )
 
-                print("\nWinning TSP node:")
-                print("Name:", finishing_node.name)
-                print("Path:", winning_node.path)
-                print("Cost:", winning_node.cost)
-                print("Total cost:", winning_node.total_cost)
-                print("Vertex:", winning_node.vertex)
-                print("Visited:", winning_node.visited)
+                print(
+                    "\nWinning TSP node:"
+                )
+
+                print(
+                    "Name:",
+                    finishing_node.name
+                )
+
+                print(
+                    "Path:",
+                    winning_node.path
+                )
+
+                print(
+                    "Cost:",
+                    winning_node.cost
+                )
+
+                print(
+                    "Total cost:",
+                    winning_node.total_cost
+                )
+
+                print(
+                    "Vertex:",
+                    winning_node.vertex
+                )
+
+                print(
+                    "Visited:",
+                    winning_node.visited
+                )
 
                 print("\nComputations:")
 
                 for node in self.node_list:
+
                     print(
-                        f"{node.name}: {node.computations}",
+                        f"{node.name}: "
+                        f"{node.computations}",
                         end="\t"
                     )
 
-                # Calculate the total computational work performed
-                # by all nodes.
                 total_computations = sum(
                     node.computations
                     for node in self.node_list
@@ -489,33 +701,46 @@ class MainFunctions:
                     f"{Node.simulation_time:.2f}s"
                 )
 
-                print("\n\n")
-                
+                # =========================================
+                # PROOF VALIDATION
+                # =========================================
+
                 if self.validation_mode & PROOF_VALIDATION:
-                    proof_based_validation(
-                        self.node_list[0].tsp,
-                        self.node_list[0].tsp.best_path,
-                        self.node_list[0].tsp.best_cost,
-                        Node.transcript
-                    )
 
-                if self.validation_mode & COUNCIL_VALIDATION:
+                    validators = [
 
-                    council = [
-                        node for node in self.node_list
+                        node
+
+                        for node in self.node_list
+
                         if node is not finishing_node
                     ]
 
-                    result, validation_computations, validation_time = (
-                        council_validation(
-                            self.node_list[0].tsp,
-                            council,
-                            self.node_list[0].tsp.best_path,
-                            self.node_list[0].tsp.best_cost,
-                        )
+                    (
+                        proof_valid,
+                        validation_computations,
+                        validation_time
+                    ) = proof_based_validation(
+
+                        self.node_list[0].tsp,
+
+                        self.node_list[0]
+                        .tsp
+                        .best_path,
+
+                        self.node_list[0]
+                        .tsp
+                        .best_cost,
+
+                        Node.transcript,
+
+                        validators
                     )
 
-                    print(f"Council result: {result}")
+                    print(
+                        f"Proof validation result: "
+                        f"{proof_valid}"
+                    )
 
                     print(
                         f"Validation computations: "
@@ -527,47 +752,147 @@ class MainFunctions:
                         f"{validation_time:.4f}s"
                     )
 
-                    # Add council validation time to the total simulation time.
-                    total_computations += validation_computations
-                    Node.simulation_time += validation_time
+                    total_computations += (
+                        validation_computations
+                    )
 
-                    print(
-                        f"\nTotal computations: "
-                        f"{total_computations}"
+                    Node.simulation_time += (
+                        validation_time
+                    )
+
+                # =========================================
+                # COUNCIL VALIDATION
+                # =========================================
+
+                if self.validation_mode & COUNCIL_VALIDATION:
+
+                    council = [
+
+                        node
+
+                        for node in self.node_list
+
+                        if node is not finishing_node
+                    ]
+
+                    (
+                        result,
+                        validation_computations,
+                        validation_time
+                    ) = council_validation(
+
+                        self.node_list[0]
+                        .tsp,
+
+                        council,
+
+                        self.node_list[0]
+                        .tsp
+                        .best_path,
+
+                        self.node_list[0]
+                        .tsp
+                        .best_cost
                     )
 
                     print(
-                        f"Final simulation time: "
-                        f"{Node.simulation_time:.2f}s"
+                        f"Council result: "
+                        f"{result}"
                     )
+
+                    print(
+                        f"Validation computations: "
+                        f"{validation_computations}"
+                    )
+
+                    print(
+                        f"Validation time: "
+                        f"{validation_time:.4f}s"
+                    )
+
+                    total_computations += (
+                        validation_computations
+                    )
+
+                    Node.simulation_time += (
+                        validation_time
+                    )
+
+                # -----------------------------------------
+                # Final output.
+                # -----------------------------------------
+
+                print(
+                    f"\nTotal computations: "
+                    f"{total_computations}"
+                )
+
+                print(
+                    f"Final simulation time: "
+                    f"{Node.simulation_time:.2f}s"
+                )
 
                 return total_computations
 
-            round_trancript_time = max(result[1] for result in results)
-            # If the search is not finished, advance the simulation
-            # by one complete time step.
-            Node.simulation_time += 1 + round_trancript_time
+            # ---------------------------------------------
+            # Search not finished.
+            # ---------------------------------------------
 
+            round_transcript_time = max(
+                result[1]
+                for result in results
+            )
+
+            Node.simulation_time += (
+                1 + round_transcript_time
+            )
+
+
+    # =====================================================
+    # RUN SIMULATION
+    # =====================================================
 
     def run_simulation(self):
 
-        # Define one complete PoW simulation run.
-        def run_pow():
-            self.reset_simulation()
-            return self.multiple_node_pow(self.block_hash_difficulty)
+        # ---------------------------------------------
+        # PoW run.
+        # ---------------------------------------------
 
-        # Define one complete PoUW simulation run.
-        def run_pouw():
+        def run_pow():
+
             self.reset_simulation()
+
+            return self.multiple_node_pow(
+                self.block_hash_difficulty
+            )
+
+        # ---------------------------------------------
+        # PoUW run.
+        # ---------------------------------------------
+
+        def run_pouw():
+
+            self.reset_simulation()
+
             return self.multiple_node_pouw_tsp()
 
-        # Repeat the PoW simulation and calculate its average
-        # computational work.
-        average_hashes = utils.average_runs(run_pow, self.runs)
+        # ---------------------------------------------
+        # Average PoW.
+        # ---------------------------------------------
 
-        # Repeat the PoUW simulation and calculate its average
-        # computational work.
-        average_computations = utils.average_runs(run_pouw, self.runs)
+        average_hashes = utils.average_runs(
+            run_pow,
+            self.runs
+        )
+
+        # ---------------------------------------------
+        # Average PoUW.
+        # ---------------------------------------------
+
+        average_computations = utils.average_runs(
+            run_pouw,
+            self.runs
+        )
 
         print(
             f"Average hashes: "
@@ -579,18 +904,38 @@ class MainFunctions:
             f"{average_computations:.2f}"
         )
 
-        return average_hashes, average_computations
+        return (
+            average_hashes,
+            average_computations
+        )
 
+
+    # =====================================================
+    # RESET SIMULATION
+    # =====================================================
 
     def reset_simulation(self):
 
-        # Generate a new block so that each simulation run uses
-        # different block data.
+        # ---------------------------------------------
+        # Generate a new block.
+        # ---------------------------------------------
+
         Node.blockData = BlockData()
 
-        # Reset the shared simulation state.
+        # ---------------------------------------------
+        # Reset simulation state.
+        # ---------------------------------------------
+
         Node.found = False
+
         Node.simulation_time = 0
 
-        # Recreate the nodes and the shared TSP problem.
+        # ---------------------------------------------
+        # Recreate nodes and the TSP problem.
+        #
+        # IMPORTANT:
+        # This does NOT run benchmarks.
+        # ---------------------------------------------
+
         self.create_nodes()
+

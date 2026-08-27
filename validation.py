@@ -242,169 +242,174 @@ def proof_based_validation(
     tsp,
     path,
     proposed_cost,
-    transcript
+    transcript,
+    validators
 ):
+    """
+    Validate a PoUW solution using:
+
+    1. Parallel transcript hash-chain validation.
+    2. Parallel validation of the claimed path.
+
+    Returns:
+        (valid, total_computations, total_time)
+    """
 
     if transcript is None:
         print("[VALIDATOR] No transcript provided.")
-        return False
+        return False, 0, 0.0
 
-    # Validate the transcript hash chain.
-    if not _parallel_hash_validation(
+    if not validators:
+        print("[VALIDATOR] No validators available.")
+        return False, 0, 0.0
+
+    # ---------------------------------------------------------
+    # 1. Validate transcript hash chain.
+    # ---------------------------------------------------------
+
+    (
+        hash_valid,
+        hash_computations,
+        hash_time
+    ) = _parallel_hash_validation(
         transcript,
-        num_validators=4
-    ):
+        validators
+    )
+
+    if not hash_valid:
         print(
             "[VALIDATOR] Transcript validation failed."
         )
-        return False
+        return False, hash_computations, hash_time
 
-    # Validate the claimed final path.
-    if not _validate_calculated_path(
+    # ---------------------------------------------------------
+    # 2. Validate the claimed final path.
+    # ---------------------------------------------------------
+
+    (
+        path_valid,
+        path_computations,
+        path_time
+    ) = _parallel_path_validation(
         tsp,
         path,
         proposed_cost,
-        transcript
-    ):
+        transcript,
+        validators
+    )
+
+    if not path_valid:
         print(
             "[VALIDATOR] Final path is invalid."
         )
-        return False
+
+        return (
+            False,
+            hash_computations + path_computations,
+            hash_time + path_time
+        )
+
+    total_computations = (
+        hash_computations
+        + path_computations
+    )
+
+    total_time = (
+        hash_time
+        + path_time
+    )
 
     print(
         "[VALIDATOR] Proof-based validation successful."
     )
 
-    return True
-
-def _validate_calculated_path(tsp, path, proposed_cost, transcript: Transcript):
-
-  
-
-    print("[VALIDATOR] Transcript hash chain is valid.")
-
-    total_cost = 0
-
-    for i in range(len(path) - 1):
-
-        source = path[i]
-        destination = path[i + 1]
-
-        expected_edge_cost = tsp.matrix[source][destination]
-
-        total_cost += expected_edge_cost
-
-        print(
-            f"[VALIDATOR] Checking edge "
-            f"{source} -> {destination}"
-        )
-
-        # O(1) lookup using (parent path, selected neighbour)
-        key = (
-            tuple(path[:i + 1]),
-            destination
-        )
-
-        data = transcript.path_index.get(key)
-
-        if data is None:
-            print(
-                f"[VALIDATOR] Edge {source} -> {destination} "
-                f"was not found in transcript."
-            )
-            return False
-
-        if data["edge_cost"] != expected_edge_cost:
-            print(
-                f"[VALIDATOR] Edge cost mismatch for "
-                f"{source} -> {destination}: "
-                f"recorded={data['edge_cost']}, "
-                f"expected={expected_edge_cost}"
-            )
-            return False
-
-        expected_child_path = path[:i + 2]
-
-        if data["child_path"] != expected_child_path:
-            print(
-                f"[VALIDATOR] Child path mismatch for "
-                f"{source} -> {destination}: "
-                f"recorded={data['child_path']}, "
-                f"expected={expected_child_path}"
-            )
-            return False
-
-        print(
-            f"[VALIDATOR] ✓ Edge {source} -> {destination} "
-            f"cost={expected_edge_cost}"
-        )
-
-    if total_cost != proposed_cost:
-        print(
-            f"[VALIDATOR] Total cost mismatch: "
-            f"calculated={total_cost}, "
-            f"proposed={proposed_cost}"
-        )
-        return False
-
     print(
-        f"[VALIDATOR] ✓ Total path cost = {total_cost}"
+        f"[VALIDATOR] Validation computations: "
+        f"{total_computations}"
     )
 
-    print("[VALIDATOR] Optimal path validation successful.")
+    print(
+        f"[VALIDATOR] Validation time: "
+        f"{total_time:.4f}s"
+    )
 
-    return True
+    return (
+        True,
+        total_computations,
+        total_time
+    )
 
-def _parallel_hash_validation(transcript, num_validators):
+
+def _parallel_hash_validation(
+    transcript,
+    validators
+):
+    """
+    Split the transcript between validators.
+
+    Each transcript step requires one hash validation
+    computation.
+
+    Validators operate in parallel, so validation time is
+    determined by the slowest validator.
+    """
 
     if transcript is None:
         print("[VALIDATOR] No transcript provided.")
-        return False
+        return False, 0, 0.0
 
     steps = transcript.steps
     total_steps = len(steps)
 
     if total_steps == 0:
-        print("[VALIDATOR] Transcript contains no steps.")
-        return False
+        print(
+            "[VALIDATOR] Transcript contains no steps."
+        )
+        return False, 0, 0.0
 
-    # Do not create more validators than there are steps.
-    num_validators = min(
-        num_validators,
+    # Do not use more validators than there are steps.
+    validators = validators[:min(
+        len(validators),
         total_steps
-    )
+    )]
 
-    # Calculate the hash that comes before the
-    # first transcript step.
+    num_validators = len(validators)
+
     initial_hash = utils.create_hash(
         transcript.sigma
     )
 
     arguments = []
 
-    base_size = total_steps // num_validators
-    remainder = total_steps % num_validators
+    base_size = (
+        total_steps // num_validators
+    )
+
+    remainder = (
+        total_steps % num_validators
+    )
 
     current_index = 0
 
-    for node_index in range(num_validators):
-
-        # Distribute the remainder between the first
-        # few validators.
+    for validator_index, validator in enumerate(
+        validators
+    ):
         slice_size = base_size
 
-        if node_index < remainder:
+        if validator_index < remainder:
             slice_size += 1
 
         start_index = current_index
-        end_index = start_index + slice_size
+        end_index = (
+            start_index + slice_size
+        )
 
-        # The first validator starts with hash(sigma).
+        # First validator starts from hash(sigma).
         if start_index == 0:
             slice_initial_hash = initial_hash
 
-        # Every other validator starts with the hash
-        # stored by the step immediately before its slice.
+        # Other validators start from the hash
+        # immediately before their assigned slice.
         else:
             slice_initial_hash = steps[
                 start_index - 1
@@ -412,7 +417,7 @@ def _parallel_hash_validation(transcript, num_validators):
 
         arguments.append(
             (
-                node_index,
+                validator_index,
                 steps,
                 start_index,
                 end_index,
@@ -431,52 +436,92 @@ def _parallel_hash_validation(transcript, num_validators):
             arguments
         )
 
-    print("\n[VALIDATOR] Hash-chain validation:")
+    print(
+        "\n[VALIDATOR] Hash-chain validation:"
+    )
 
     all_valid = True
+    total_computations = 0
+    validator_times = []
 
     for (
-        node_index,
+        validator_index,
         valid,
-        steps_checked,
+        computations,
         failed_index
     ) in results:
 
-        if valid:
+        validator = validators[
+            validator_index
+        ]
 
+        total_computations += computations
+
+        # Each checked hash is one validation computation.
+        if validator.hash_validation_rate > 0:
+            validator_time = (
+                computations
+                / validator.hash_validation_rate
+            )
+        else:
+            validator_time = 0.0
+
+        validator_times.append(
+            validator_time
+        )
+
+        if valid:
             print(
-                f"Node {node_index + 1}: "
-                f"{steps_checked} steps checked, "
+                f"Node {validator_index + 1}: "
+                f"{computations} steps checked, "
                 f"VALID"
             )
 
         else:
-
             print(
-                f"Node {node_index + 1}: "
+                f"Node {validator_index + 1}: "
                 f"hash validation FAILED at "
                 f"step {failed_index}"
             )
 
             all_valid = False
 
-    if all_valid:
+    validation_time = (
+        max(validator_times)
+        if validator_times
+        else 0.0
+    )
 
+    if all_valid:
         print(
             "[VALIDATOR] Hash chain is valid."
         )
 
     else:
-
         print(
             "[VALIDATOR] Hash chain is INVALID."
         )
 
-    return all_valid
+    print(
+        f"[VALIDATOR] Hash validation computations: "
+        f"{total_computations}"
+    )
+
+    print(
+        f"[VALIDATOR] Hash validation time: "
+        f"{validation_time:.4f}s"
+    )
+
+    return (
+        all_valid,
+        total_computations,
+        validation_time
+    )
 
 def _hash_slice_worker(args):
+
     (
-        node_index,
+        validator_index,
         steps,
         start_index,
         end_index,
@@ -484,9 +529,16 @@ def _hash_slice_worker(args):
     ) = args
 
     previous_hash = initial_hash
-    steps_checked = 0
+    computations = 0
 
-    for index in range(start_index, end_index):
+    for index in range(
+        start_index,
+        end_index
+    ):
+
+        # This validation attempt counts as one computation,
+        # even if the step turns out to be invalid.
+        computations += 1
 
         step = steps[index]
 
@@ -494,23 +546,20 @@ def _hash_slice_worker(args):
 
         if step["step"] != expected_step_number:
             return (
-                node_index,
+                validator_index,
                 False,
-                steps_checked,
+                computations,
                 index
             )
 
-        # Check that this step points to the hash
-        # of the previous step.
         if step["previous_hash"] != previous_hash:
             return (
-                node_index,
+                validator_index,
                 False,
-                steps_checked,
+                computations,
                 index
             )
 
-        # Recalculate this step's hash.
         hash_data = (
             previous_hash
             + str(step["step"])
@@ -521,22 +570,354 @@ def _hash_slice_worker(args):
             hash_data
         )
 
-        # Compare the calculated hash with
-        # the hash stored in the transcript.
         if step["hash"] != expected_hash:
             return (
-                node_index,
+                validator_index,
                 False,
-                steps_checked,
+                computations,
                 index
             )
 
         previous_hash = step["hash"]
-        steps_checked += 1
 
     return (
-        node_index,
+        validator_index,
         True,
-        steps_checked,
+        computations,
         None
     )
+
+def _parallel_path_validation(
+    tsp,
+    path,
+    proposed_cost,
+    transcript,
+    validators
+):
+    """
+    Validate the claimed path.
+
+    Each edge in the proposed path is one path-validation
+    computation.
+
+    Validators operate in parallel.
+    """
+
+    if not path:
+        print(
+            "[VALIDATOR] Empty path."
+        )
+        return False, 0, 0.0
+
+    if len(path) < 2:
+        print(
+            "[VALIDATOR] Path is too short."
+        )
+        return False, 0, 0.0
+
+    if transcript is None:
+        return False, 0, 0.0
+
+    edge_count = len(path) - 1
+
+    validators = validators[:min(
+        len(validators),
+        edge_count
+    )]
+
+    if not validators:
+        return False, 0, 0.0
+
+    num_validators = len(validators)
+
+    # Split edges between validators.
+    base_size = edge_count // num_validators
+    remainder = edge_count % num_validators
+
+    arguments = []
+
+    current_index = 0
+
+    for validator_index in range(
+        num_validators
+    ):
+
+        slice_size = base_size
+
+        if validator_index < remainder:
+            slice_size += 1
+
+        start_index = current_index
+        end_index = (
+            start_index + slice_size
+        )
+
+        arguments.append(
+            (
+                validator_index,
+                tsp,
+                path,
+                transcript.path_index,
+                start_index,
+                end_index
+            )
+        )
+
+        current_index = end_index
+
+    with multiprocessing.Pool(
+        processes=num_validators
+    ) as pool:
+
+        results = pool.map(
+            _path_slice_worker,
+            arguments
+        )
+
+    print(
+        "\n[VALIDATOR] Path validation:"
+    )
+
+    all_valid = True
+    total_computations = 0
+    validator_times = []
+
+    for (
+        validator_index,
+        valid,
+        computations,
+        calculated_cost,
+        error
+    ) in results:
+
+        validator = validators[
+            validator_index
+        ]
+
+        total_computations += computations
+
+        if validator.path_validation_rate > 0:
+            validator_time = (
+                computations
+                / validator.path_validation_rate
+            )
+        else:
+            validator_time = 0.0
+
+        validator_times.append(
+            validator_time
+        )
+
+        if valid:
+
+            print(
+                f"Node {validator_index + 1}: "
+                f"{computations} path checks, "
+                f"VALID"
+            )
+
+        else:
+
+            print(
+                f"Node {validator_index + 1}: "
+                f"PATH VALIDATION FAILED: "
+                f"{error}"
+            )
+
+            all_valid = False
+
+    calculated_cost = sum(
+    result[3]
+    for result in results
+)
+
+    if calculated_cost != proposed_cost:
+        print(
+            f"[VALIDATOR] Total cost mismatch: "
+            f"calculated={calculated_cost}, "
+            f"proposed={proposed_cost}"
+        )
+        all_valid = False
+    else:
+        print(
+            f"[VALIDATOR] ✓ Total path cost = "
+            f"{calculated_cost}"
+        )
+
+    validation_time = (
+        max(validator_times)
+        if validator_times
+        else 0.0
+    )
+
+    if all_valid:
+
+        print(
+            "[VALIDATOR] Path validation successful."
+        )
+
+    else:
+
+        print(
+            "[VALIDATOR] Path validation failed."
+        )
+
+    print(
+        f"[VALIDATOR] Path validation computations: "
+        f"{total_computations}"
+    )
+
+    print(
+        f"[VALIDATOR] Path validation time: "
+        f"{validation_time:.4f}s"
+    )
+
+    return (
+        all_valid,
+        total_computations,
+        validation_time
+    )
+
+def _path_slice_worker(args):
+
+    (
+        validator_index,
+        tsp,
+        path,
+        path_index,
+        start_index,
+        end_index
+    ) = args
+
+    computations = 0
+    calculated_cost = 0
+
+    for i in range(
+        start_index,
+        end_index
+    ):
+
+        # One path/edge validation attempt.
+        computations += 1
+
+        source = path[i]
+        destination = path[i + 1]
+
+        expected_edge_cost = (
+            tsp.matrix[source][destination]
+        )
+
+        if expected_edge_cost == utils.inf:
+            return (
+                validator_index,
+                False,
+                computations,
+                calculated_cost,
+                (
+                    f"Edge {source} -> "
+                    f"{destination} does not exist."
+                )
+            )
+
+        calculated_cost += expected_edge_cost
+
+        key = (
+            tuple(path[:i + 1]),
+            destination
+        )
+
+        data = path_index.get(key)
+
+        if data is None:
+            return (
+                validator_index,
+                False,
+                computations,
+                calculated_cost,
+                (
+                    f"Edge {source} -> "
+                    f"{destination} was not found "
+                    f"in transcript."
+                )
+            )
+
+        if data["edge_cost"] != expected_edge_cost:
+            return (
+                validator_index,
+                False,
+                computations,
+                calculated_cost,
+                (
+                    f"Edge cost mismatch for "
+                    f"{source} -> {destination}."
+                )
+            )
+
+        expected_child_path = (
+            path[:i + 2]
+        )
+
+        if data["child_path"] != expected_child_path:
+            return (
+                validator_index,
+                False,
+                computations,
+                calculated_cost,
+                (
+                    f"Child path mismatch for "
+                    f"{source} -> {destination}."
+                )
+            )
+
+    return (
+        validator_index,
+        True,
+        computations,
+        calculated_cost,
+        None
+    )
+
+def _validate_calculated_path(
+    tsp,
+    path,
+    proposed_cost,
+    transcript
+):
+    total_cost = 0
+
+    for i in range(len(path) - 1):
+
+        source = path[i]
+        destination = path[i + 1]
+
+        expected_edge_cost = (
+            tsp.matrix[source][destination]
+        )
+
+        if expected_edge_cost == utils.inf:
+            return False
+
+        total_cost += expected_edge_cost
+
+        key = (
+            tuple(path[:i + 1]),
+            destination
+        )
+
+        data = transcript.path_index.get(key)
+
+        if data is None:
+            return False
+
+        if data["edge_cost"] != expected_edge_cost:
+            return False
+
+        expected_child_path = path[:i + 2]
+
+        if data["child_path"] != expected_child_path:
+            return False
+
+    if total_cost != proposed_cost:
+        return False
+
+    return True

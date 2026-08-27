@@ -24,6 +24,9 @@ class MainFunctions:
     ):
 
         Node.validation_pow_ratio = 0
+        Node.transcript_pouw_ratio = 0
+        Node.path_validation_pow_ratio = 0
+        Node.hash_validation_pow_ratio = 0
         # Store the main simulation parameters.
         self.num_of_nodes = num_of_nodes
         self.num_of_cities = num_of_cities
@@ -63,6 +66,77 @@ class MainFunctions:
 
         print("PoUW TSP Benchmark: ")
         print(f"Computations/sec: {computations_per_second:.0f}\n")
+
+        if validation_mode & PROOF_VALIDATION:
+
+            # --------------------------------
+            # Transcript benchmark
+            # --------------------------------
+
+            transcript_per_second = utils.average_runs(
+                benchmark.benchmark_transcript,
+                runs
+            )
+
+            Node.transcript_pouw_ratio = (
+                transcript_per_second / computations_per_second
+            )
+
+            print("Transcript Benchmark:")
+            print(
+                f"Transcript steps/sec: "
+                f"{transcript_per_second:.0f}"
+            )
+            print(
+                f"Transcript/PoW ratio: "
+                f"{Node.transcript_pouw_ratio:.6f}\n"
+            )
+
+            # --------------------------------
+            # Path validation benchmark
+            # --------------------------------
+
+            path_validation_per_second = utils.average_runs(
+                benchmark.benchmark_path_validation,
+                runs
+            )
+
+            Node.path_validation_pow_ratio = (
+                path_validation_per_second / hashes_per_second
+            )
+
+            print("Path Validation Benchmark:")
+            print(
+                f"Validations/sec: "
+                f"{path_validation_per_second:.0f}"
+            )
+            print(
+                f"Path validation/PoW ratio: "
+                f"{Node.path_validation_pow_ratio:.6f}\n"
+            )
+
+            # --------------------------------
+            # Hash validation benchmark
+            # --------------------------------
+
+            hash_validation_per_second = utils.average_runs(
+                benchmark.benchmark_hash_validation,
+                runs
+            )
+
+            Node.hash_validation_pow_ratio = (
+                hash_validation_per_second / hashes_per_second
+            )
+
+            print("Hash Validation Benchmark:")
+            print(
+                f"Steps/sec: "
+                f"{hash_validation_per_second:.0f}"
+            )
+            print(
+                f"Hash validation/PoW ratio: "
+                f"{Node.hash_validation_pow_ratio:.6f}\n"
+            )
 
 
         # Calculate the ratio between PoUW computations and PoW hashes.
@@ -315,10 +389,10 @@ class MainFunctions:
             # Branch and Bound search tree.
             for node in self.node_list:
 
-                computations, finished = node.pouw_mining()
+                computations, _, transcript_time, finished = node.pouw_mining()
 
                 results.append(
-                    (computations, finished)
+                    (computations, transcript_time, finished)
                 )
 
                 # The search is finished when the priority queue
@@ -331,7 +405,7 @@ class MainFunctions:
                 # Find the node that completed the TSP search.
                 finishing_node_index = next(
                     i for i, result in enumerate(results)
-                    if result[1]
+                    if result[2]
                 )
 
                 finishing_node = self.node_list[finishing_node_index]
@@ -343,7 +417,7 @@ class MainFunctions:
                 # Calculate the fraction of the final simulation
                 # step required by the winning node.
                 winner_time = (
-                    finishing_node_computations / finishing_node.search_rate
+                    finishing_node_computations / finishing_node.search_rate + transcript_time
                 )
 
                 # Remove the unused portion of the final batch from
@@ -407,7 +481,7 @@ class MainFunctions:
 
                 print(
                     "\n\nTotal computations:",
-                    total_computations
+                    round(total_computations)
                 )
 
                 print(
@@ -469,9 +543,10 @@ class MainFunctions:
 
                 return total_computations
 
+            round_trancript_time = max(result[1] for result in results)
             # If the search is not finished, advance the simulation
             # by one complete time step.
-            Node.simulation_time += 1
+            Node.simulation_time += 1 + round_trancript_time
 
 
     def run_simulation(self):

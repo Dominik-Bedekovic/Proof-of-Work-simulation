@@ -268,7 +268,7 @@ class TspFunction():
         return best_cost >= proposed_cost, computations
 
     @staticmethod
-    def tsp_solver(tsp: TspData, search_rate, transcript=None):
+    def tsp_solver(tsp: TspData, search_rate, transcript=None, transcript_ratio=0):
         # Obtain the priority queue containing nodes that still need
         # to be explored.
         priority_queue = tsp.priority_queue
@@ -278,6 +278,8 @@ class TspFunction():
 
         # Count the number of processed search nodes.
         computations = 0
+        work = 0.0
+        time = 0.0
 
         # Process a limited number of nodes according to the
         # simulated search rate of the current node.
@@ -286,12 +288,13 @@ class TspFunction():
             # If the priority queue is empty, the entire search space
             # has been processed and the optimal solution is known.
             if not priority_queue:
-                return computations, True
+                return computations, work, time, True
 
             # Select the node with the smallest lower-bound cost.
             current_node: TspNode = heapq.heappop(priority_queue)
 
             computations += 1
+            work += 1.0
 
             # If the lower bound is already worse than the best
             # solution found so far, this branch can be pruned.
@@ -336,6 +339,10 @@ class TspFunction():
                     #print(f"[TRANSCRIPT] Pruned: {data['pruned']}")
                     
                     transcript.add_step(data)
+
+                    if transcript_ratio > 0:
+                        work += 1 / transcript_ratio
+                        time += 1 / transcript_ratio
                     
                     #print(
                     #    f"[TRANSCRIPT] Hash: "
@@ -404,6 +411,10 @@ class TspFunction():
 
                         transcript.add_step(data)
 
+                        if transcript_ratio > 0:
+                            work += 1 / transcript_ratio
+                            time += 1 / transcript_ratio
+
                         #print(
                         #    f"[TRANSCRIPT] Hash: "
                         #    f"{transcript.steps[-1]['hash']}"
@@ -415,4 +426,4 @@ class TspFunction():
                         heapq.heappush(priority_queue, child)
 
         # The search was not completed during this execution.
-        return computations, False
+        return computations, work, time, False

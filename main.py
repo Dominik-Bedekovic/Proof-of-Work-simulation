@@ -12,7 +12,7 @@ runs = 5
 # Number of leading zeros required in a valid PoW hash.
 block_hash_difficulty = 4
 
-# Number of nodes participating in each simulation.
+# Number of nodes participting in each simulation.
 num_of_nodes = 5
 
 # Number of cities used for the TSP instance in the PoUW simulation.
@@ -22,7 +22,7 @@ num_of_cities = 11
 def main():
 
     validation_mode = 0
-    validation_mode |= COUNCIL_VALIDATION
+    validation_mode |= PROOF_VALIDATION
 
     print(f"Validation mode: {validation_mode}")
     print(f"Binary: {validation_mode:02b}")

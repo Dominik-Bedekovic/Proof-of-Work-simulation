@@ -59,7 +59,7 @@ def benchmark_tsp_pouw(duration=1.0, size=0):
 
     while (time.perf_counter() - start < duration):
 
-        computations, _ = TspFunction.tsp_solver(benchmark_tsp, 1)
+        computations, _, _, _= TspFunction.tsp_solver(benchmark_tsp, 1)
 
         total_computations += computations
 

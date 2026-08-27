@@ -22,7 +22,6 @@ class Node:
     tsp = None
     transcript = None
 
-
     @classmethod
     def initialize_tsp(cls, num_of_nodes):
         # Generate the shared TSP problem used during the PoUW simulation.
@@ -68,11 +67,42 @@ class Node:
         validation_ratio = getattr(Node, "validation_pow_ratio", 0)
         self.validation_rate = round(self.hash_rate * validation_ratio)
 
+        # Calculate the corresponding transcript rate.
+        transcript_ratio = getattr(
+            Node,
+            "transcript_pouw_ratio",
+            0
+        )
+        self.transcript_rate = round(
+            self.hash_rate * transcript_ratio
+        )
+
+        # Calculate the corresponding path validation rate.
+        path_validation_ratio = getattr(
+            Node,
+            "path_validation_pow_ratio",
+            0
+        )
+        self.path_validation_rate = round(
+            self.hash_rate * path_validation_ratio
+        )
+
+        # Calculate the corresponding hash validation rate.
+        hash_validation_ratio = getattr(
+            Node,
+            "hash_validation_pow_ratio",
+            0
+        )
+        self.hash_validation_rate = round(
+            self.hash_rate * hash_validation_ratio
+        )
+
 
 
         # Total number of TSP search-node computations performed
         # by this node.
         self.computations = 0
+        self.work = 0.0
 
     def update_pow_state(self, result):
         self.mining_count += result["hashes"]
@@ -89,16 +119,18 @@ class Node:
     def pouw_mining(self):
         # Process a batch of TSP search-tree nodes according to the
         # simulated search rate of this node.
-        temp_computation, finished = TspFunction.tsp_solver(
+        temp_computation, work, transcript_time, finished = TspFunction.tsp_solver(
             self.tsp,
             self.search_rate,
-            Node.transcript
+            Node.transcript,
+            Node.transcript_pouw_ratio
         )
 
         # Add the number of processed search nodes to the node's
         # total computational work.
-        self.computations += temp_computation
+        self.work += work
+        self.computations += work
 
         # Return the number of computations performed and indicate
         # whether the shared TSP search has been completed.
-        return temp_computation, finished
+        return temp_computation, self.work, transcript_time, finished

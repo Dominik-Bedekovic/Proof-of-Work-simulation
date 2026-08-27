@@ -492,9 +492,41 @@ class MainFunctions:
                     "Simulation time:",
                     Node.simulation_time
                 )
+                
+                return {
+                    "total_hashes": total_mining_count,
 
-                return total_mining_count
+                    "simulation_time":
+                        Node.simulation_time,
 
+                    "winner": {
+                        "name":
+                            finishing_node.name,
+
+                        "hashes":
+                            hashes,
+
+                        "nonce":
+                            winner["nonce"],
+
+                        "extra_nonce":
+                            winner["extra_nonce"],
+
+                        "header_hash":
+                            winner["header_hash"]
+                    },
+
+                    "nodes": {
+                        node.name: {
+                            "hash_rate":
+                                node.hash_rate,
+
+                            "hashes":
+                                node.mining_count
+                        }
+                        for node in self.node_list
+                    }
+                }
 
     # =====================================================
     # PROOF OF USEFUL WORK
@@ -702,6 +734,15 @@ class MainFunctions:
                 )
 
                 # =========================================
+                # Calculate total computations
+                # =========================================
+
+                total_computations = sum(
+                    node.computations
+                    for node in self.node_list
+                )
+
+                # =========================================
                 # PROOF VALIDATION
                 # =========================================
 
@@ -832,8 +873,47 @@ class MainFunctions:
                     f"{Node.simulation_time:.2f}s"
                 )
 
-                return total_computations
+                return {
+                    "total_computations":
+                        total_computations,
 
+                    "simulation_time":
+                        Node.simulation_time,
+
+                    "winner": {
+                        "name":
+                            finishing_node.name,
+
+                        "path":
+                            winning_node.path,
+
+                        "cost":
+                            winning_node.cost,
+
+                        "total_cost":
+                            winning_node.total_cost,
+
+                        "vertex":
+                            winning_node.vertex,
+
+                        "visited":
+                            winning_node.visited
+                    },
+
+                    "nodes": {
+                        node.name: {
+                            "hash_rate":
+                                node.hash_rate,
+
+                            "search_rate":
+                                node.search_rate,
+
+                            "computations":
+                                node.computations
+                        }
+                        for node in self.node_list
+                    }
+                }
             # ---------------------------------------------
             # Search not finished.
             # ---------------------------------------------
@@ -854,44 +934,102 @@ class MainFunctions:
 
     def run_simulation(self):
 
-        # ---------------------------------------------
-        # PoW run.
-        # ---------------------------------------------
+        # =====================================================
+        # Run PoW multiple times
+        # =====================================================
 
-        def run_pow():
+        pow_results = []
+
+        for _ in range(self.runs):
 
             self.reset_simulation()
 
-            return self.multiple_node_pow(
+            result = self.multiple_node_pow(
                 self.block_hash_difficulty
             )
 
-        # ---------------------------------------------
-        # PoUW run.
-        # ---------------------------------------------
+            pow_results.append(result)
 
-        def run_pouw():
+        # =====================================================
+        # Run PoUW WITHOUT validation
+        # =====================================================
+
+        pouw_results = []
+
+        # Save selected validation mode
+        selected_validation_mode = self.validation_mode
+
+        # Temporarily disable validation
+        self.validation_mode = NO_VALIDATION
+
+        for _ in range(self.runs):
 
             self.reset_simulation()
 
-            return self.multiple_node_pouw_tsp()
+            result = self.multiple_node_pouw_tsp()
 
-        # ---------------------------------------------
-        # Average PoW.
-        # ---------------------------------------------
+            pouw_results.append(result)
 
-        average_hashes = utils.average_runs(
-            run_pow,
-            self.runs
+        # =====================================================
+        # Run PoUW WITH validation
+        # =====================================================
+
+        validated_pouw_results = []
+
+        if selected_validation_mode != NO_VALIDATION:
+
+            # Restore selected validation mode
+            self.validation_mode = selected_validation_mode
+
+            for _ in range(self.runs):
+
+                self.reset_simulation()
+
+                result = self.multiple_node_pouw_tsp()
+
+                validated_pouw_results.append(result)
+
+        # Restore validation mode
+        self.validation_mode = selected_validation_mode
+
+        # =====================================================
+        # Calculate baseline averages
+        # =====================================================
+
+        average_hashes = (
+            sum(
+                result["total_hashes"]
+                for result in pow_results
+            )
+            / len(pow_results)
         )
 
-        # ---------------------------------------------
-        # Average PoUW.
-        # ---------------------------------------------
+        average_computations = (
+            sum(
+                result["total_computations"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
 
-        average_computations = utils.average_runs(
-            run_pouw,
-            self.runs
+        # =====================================================
+        # Average simulation times
+        # =====================================================
+
+        average_pow_simulation_time = (
+            sum(
+                result["simulation_time"]
+                for result in pow_results
+            )
+            / len(pow_results)
+        )
+
+        average_pouw_simulation_time = (
+            sum(
+                result["simulation_time"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
         )
 
         print(
@@ -900,15 +1038,197 @@ class MainFunctions:
         )
 
         print(
-            f"Average computation: "
+            f"Average computations: "
             f"{average_computations:.2f}"
         )
 
-        return (
-            average_hashes,
-            average_computations
+        print(
+            f"Average PoW simulation time: "
+            f"{average_pow_simulation_time:.2f}s"
         )
 
+        print(
+            f"Average PoUW simulation time: "
+            f"{average_pouw_simulation_time:.2f}s"
+        )
+
+        # =====================================================
+        # Average PoW node hash rates
+        # =====================================================
+
+        average_pow_hash_rate = {}
+
+        for node_name in pow_results[0]["nodes"]:
+
+            average_pow_hash_rate[node_name] = (
+
+                sum(
+                    run["nodes"][node_name]["hash_rate"]
+                    for run in pow_results
+                )
+                / len(pow_results)
+
+            )
+
+        # =====================================================
+        # Average PoUW node hash rates
+        # =====================================================
+
+        average_pouw_hash_rate = {}
+
+        for node_name in pouw_results[0]["nodes"]:
+
+            average_pouw_hash_rate[node_name] = (
+
+                sum(
+                    run["nodes"][node_name]["hash_rate"]
+                    for run in pouw_results
+                )
+                / len(pouw_results)
+
+            )
+
+        # =====================================================
+        # Average PoUW search rates
+        # =====================================================
+
+        average_pouw_search_rate = {}
+
+        for node_name in pouw_results[0]["nodes"]:
+
+            average_pouw_search_rate[node_name] = (
+
+                sum(
+                    run["nodes"][node_name]["search_rate"]
+                    for run in pouw_results
+                )
+                / len(pouw_results)
+
+            )
+
+        # =====================================================
+        # Average PoW mining counts
+        # =====================================================
+
+        average_pow_mining_count = {}
+
+        for node_name in pow_results[0]["nodes"]:
+
+            average_pow_mining_count[node_name] = (
+
+                sum(
+                    run["nodes"][node_name]["hashes"]
+                    for run in pow_results
+                )
+                / len(pow_results)
+
+            )
+
+        # =====================================================
+        # Average PoUW computations
+        # =====================================================
+
+        average_pouw_computations = {}
+
+        for node_name in pouw_results[0]["nodes"]:
+
+            average_pouw_computations[node_name] = (
+
+                sum(
+                    run["nodes"][node_name]["computations"]
+                    for run in pouw_results
+                )
+                / len(pouw_results)
+
+            )
+
+        # =====================================================
+        # Average validated PoUW computations
+        # =====================================================
+
+        if validated_pouw_results:
+
+            average_validated_pouw_computations = (
+
+                sum(
+                    result["total_computations"]
+                    for result in validated_pouw_results
+                )
+                / len(validated_pouw_results)
+
+            )
+
+            average_validated_pouw_simulation_time = (
+
+                sum(
+                    result["simulation_time"]
+                    for result in validated_pouw_results
+                )
+                / len(validated_pouw_results)
+
+            )
+
+        else:
+
+            average_validated_pouw_computations = None
+
+            average_validated_pouw_simulation_time = None
+
+        # =====================================================
+        # Final result
+        # =====================================================
+
+        return {
+
+            "average_hashes": average_hashes,
+
+            "average_computations": average_computations,
+
+            "average_pow_simulation_time":
+                average_pow_simulation_time,
+
+            "average_pouw_simulation_time":
+                average_pouw_simulation_time,
+
+            "pow": {
+
+                "average_hash_rate":
+                    average_pow_hash_rate,
+
+                "average_mining_count":
+                average_pow_mining_count,
+
+                "runs":
+                    pow_results
+            },
+
+            "pouw": {
+
+                "average_hash_rate":
+                    average_pouw_hash_rate,
+
+                "average_search_rate":
+                    average_pouw_search_rate,
+
+                "average_computations":
+                average_pouw_computations,
+
+                "runs":
+                    pouw_results
+            },
+
+            "validated_pouw": {
+
+                "average_computations":
+                    average_validated_pouw_computations,
+
+                "average_simulation_time":
+                    average_validated_pouw_simulation_time,
+
+                "runs":
+                    validated_pouw_results
+            }
+        }
 
     # =====================================================
     # RESET SIMULATION

@@ -1,175 +1,1582 @@
 import tkinter as tk
 from tkinter import ttk
 
-from mainFunctions import MainFunctions
-
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+from mainFunctions import MainFunctions
+
+
+# ============================================================
+# Validation modes
+# ============================================================
 
 NO_VALIDATION = 0
 PROOF_VALIDATION = 1
 COUNCIL_VALIDATION = 2
 
+
+# ============================================================
+# Global GUI variables
+# ============================================================
+
+root = None
+
+settings_frame = None
+results_container = None
+results_canvas = None
+results_frame = None
+comparison_frame = None
+node_frame = None
+
+nodes = None
+runs = None
+difficulty = None
+cities = None
+validation = None
+
+configuration_nodes_label = None
+configuration_runs_label = None
+configuration_difficulty_label = None
+configuration_cities_label = None
+
+pow_hash_rate_label = None
+pow_average_hashes_label = None
+
+pouw_computation_rate_label = None
+pouw_average_computations_label = None
+
+average_hashes_label = None
+average_computations_label = None
+
+pow_simulation_time_label = None
+pouw_simulation_time_label = None
+
+
+# ============================================================
+# Start GUI
+# ============================================================
+
+def start_gui():
+    global root
+    global settings_frame
+    global results_container
+    global results_canvas
+    global results_frame
+    global comparison_frame
+    global node_frame
+
+    global nodes
+    global runs
+    global difficulty
+    global cities
+    global validation
+
+    global configuration_nodes_label
+    global configuration_runs_label
+    global configuration_difficulty_label
+    global configuration_cities_label
+
+    global pow_hash_rate_label
+    global pow_average_hashes_label
+
+    global pouw_computation_rate_label
+    global pouw_average_computations_label
+
+    global average_hashes_label
+    global average_computations_label
+
+    global pow_simulation_time_label
+    global pouw_simulation_time_label
+
+    # ========================================================
+    # Main window
+    # ========================================================
+
+    root = tk.Tk()
+
+    root.title("PoW vs PoUW Simulation")
+
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+
+    # ========================================================
+    # Settings frame
+    # ========================================================
+
+    settings_frame = ttk.Frame(
+        root,
+        padding=20
+    )
+
+    settings_frame.grid(
+        row=0,
+        column=0,
+        sticky="nsew"
+    )
+
+    settings_frame.columnconfigure(0, weight=1)
+    settings_frame.columnconfigure(1, weight=1)
+
+    title = ttk.Label(
+        settings_frame,
+        text="PoW vs PoUW Benchmark"
+    )
+
+    title.grid(
+        row=0,
+        column=0,
+        columnspan=2,
+        pady=(0, 20)
+    )
+
+    # ========================================================
+    # Benchmark settings
+    # ========================================================
+
+    benchmark_settings_frame = ttk.LabelFrame(
+        settings_frame,
+        text="Benchmark Settings",
+        padding=15
+    )
+
+    benchmark_settings_frame.grid(
+        row=1,
+        column=0,
+        columnspan=2,
+        sticky="we",
+        pady=(0, 20)
+    )
+
+    benchmark_settings_frame.columnconfigure(
+        1,
+        weight=1
+    )
+
+    ttk.Label(
+        benchmark_settings_frame,
+        text="Number of Nodes"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="w",
+        padx=5,
+        pady=10
+    )
+
+    nodes_frame = ttk.Frame(
+        benchmark_settings_frame
+    )
+
+    nodes_frame.grid(
+        row=0,
+        column=1,
+        sticky="w",
+        padx=10
+    )
+
+    nodes = tk.IntVar(value=4)
+
+    ttk.Radiobutton(
+        nodes_frame,
+        text="3",
+        variable=nodes,
+        value=3
+    ).grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        nodes_frame,
+        text="4",
+        variable=nodes,
+        value=4
+    ).grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        nodes_frame,
+        text="5",
+        variable=nodes,
+        value=5
+    ).grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    ttk.Label(
+        benchmark_settings_frame,
+        text="Number of Runs"
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w",
+        padx=5,
+        pady=10
+    )
+
+    runs_frame = ttk.Frame(
+        benchmark_settings_frame
+    )
+
+    runs_frame.grid(
+        row=1,
+        column=1,
+        sticky="w",
+        padx=10
+    )
+
+    runs = tk.IntVar(value=10)
+
+    ttk.Radiobutton(
+        runs_frame,
+        text="5",
+        variable=runs,
+        value=5
+    ).grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        runs_frame,
+        text="10",
+        variable=runs,
+        value=10
+    ).grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        runs_frame,
+        text="20",
+        variable=runs,
+        value=20
+    ).grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    # ========================================================
+    # PoW settings
+    # ========================================================
+
+    pow_settings_frame = ttk.LabelFrame(
+        settings_frame,
+        text="PoW Settings",
+        padding=15
+    )
+
+    pow_settings_frame.grid(
+        row=2,
+        column=0,
+        sticky="nsew",
+        padx=(0, 10),
+        pady=(0, 20)
+    )
+
+    pow_settings_frame.columnconfigure(
+        1,
+        weight=1
+    )
+
+    ttk.Label(
+        pow_settings_frame,
+        text="Difficulty"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="w",
+        padx=5,
+        pady=10
+    )
+
+    difficulty_frame = ttk.Frame(
+        pow_settings_frame
+    )
+
+    difficulty_frame.grid(
+        row=0,
+        column=1,
+        sticky="w",
+        padx=10
+    )
+
+    difficulty = tk.IntVar(value=4)
+
+    ttk.Radiobutton(
+        difficulty_frame,
+        text="Low",
+        variable=difficulty,
+        value=2
+    ).grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        difficulty_frame,
+        text="Medium",
+        variable=difficulty,
+        value=4
+    ).grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        difficulty_frame,
+        text="High",
+        variable=difficulty,
+        value=6
+    ).grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    # ========================================================
+    # PoUW settings
+    # ========================================================
+
+    pouw_settings_frame = ttk.LabelFrame(
+        settings_frame,
+        text="PoUW Settings",
+        padding=15
+    )
+
+    pouw_settings_frame.grid(
+        row=2,
+        column=1,
+        sticky="nsew",
+        padx=(10, 0),
+        pady=(0, 20)
+    )
+
+    pouw_settings_frame.columnconfigure(
+        1,
+        weight=1
+    )
+
+    ttk.Label(
+        pouw_settings_frame,
+        text="Number of Cities",
+        width=18
+    ).grid(
+        row=0,
+        column=0,
+        sticky="w",
+        padx=5,
+        pady=10
+    )
+
+    cities_frame = ttk.Frame(
+        pouw_settings_frame
+    )
+
+    cities_frame.grid(
+        row=0,
+        column=1,
+        sticky="w",
+        padx=10
+    )
+
+    cities = tk.IntVar(value=9)
+
+    ttk.Radiobutton(
+        cities_frame,
+        text="7",
+        variable=cities,
+        value=7
+    ).grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        cities_frame,
+        text="9",
+        variable=cities,
+        value=9
+    ).grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        cities_frame,
+        text="11",
+        variable=cities,
+        value=11
+    ).grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    ttk.Label(
+        pouw_settings_frame,
+        text="Verification",
+        width=18
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w",
+        padx=5,
+        pady=10
+    )
+
+    verification_frame = ttk.Frame(
+        pouw_settings_frame
+    )
+
+    verification_frame.grid(
+        row=1,
+        column=1,
+        sticky="w",
+        padx=10
+    )
+
+    validation = tk.StringVar(value="none")
+
+    ttk.Radiobutton(
+        verification_frame,
+        text="None",
+        variable=validation,
+        value="none"
+    ).grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        verification_frame,
+        text="Proof validation",
+        variable=validation,
+        value="proof"
+    ).grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    ttk.Radiobutton(
+        verification_frame,
+        text="Council validation",
+        variable=validation,
+        value="council"
+    ).grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    # ========================================================
+    # Run button
+    # ========================================================
+
+    run_button = ttk.Button(
+        settings_frame,
+        text="Run",
+        command=run_settings
+    )
+
+    run_button.grid(
+        row=3,
+        column=0,
+        columnspan=2,
+        pady=(10, 20)
+    )
+
+    # ========================================================
+    # Results container
+    # ========================================================
+
+    results_container = ttk.Frame(
+        root
+    )
+
+    results_container.columnconfigure(
+        0,
+        weight=1
+    )
+
+    results_container.rowconfigure(
+        0,
+        weight=1
+    )
+
+    # ========================================================
+    # Results canvas
+    # ========================================================
+
+    results_canvas = tk.Canvas(
+        results_container,
+        highlightthickness=0
+    )
+
+    results_canvas.grid(
+        row=0,
+        column=0,
+        sticky="nsew"
+    )
+
+    # ========================================================
+    # Scrollbar
+    # ========================================================
+
+    results_scrollbar = ttk.Scrollbar(
+        results_container,
+        orient="vertical",
+        command=results_canvas.yview
+    )
+
+    results_scrollbar.grid(
+        row=0,
+        column=1,
+        sticky="ns"
+    )
+
+    # ========================================================
+    # Scrollable results frame
+    # ========================================================
+
+    results_frame = ttk.Frame(
+        results_canvas,
+        padding=20
+    )
+
+    results_window = results_canvas.create_window(
+        (0, 0),
+        window=results_frame,
+        anchor="nw"
+    )
+
+    results_canvas.configure(
+        yscrollcommand=results_scrollbar.set
+    )
+
+    def update_scroll_region(event=None):
+        results_canvas.configure(
+            scrollregion=results_canvas.bbox("all")
+        )
+
+    def resize_results_frame(event):
+        results_canvas.itemconfigure(
+            results_window,
+            width=event.width
+        )
+
+    results_frame.bind(
+        "<Configure>",
+        update_scroll_region
+    )
+
+    results_canvas.bind(
+        "<Configure>",
+        resize_results_frame
+    )
+
+    def scroll_results(event):
+        results_canvas.yview_scroll(
+            int(-1 * (event.delta / 120)),
+            "units"
+        )
+
+    results_canvas.bind(
+        "<MouseWheel>",
+        scroll_results
+    )
+
+    # ========================================================
+    # Results layout
+    # ========================================================
+
+    results_frame.columnconfigure(0, weight=1)
+    results_frame.columnconfigure(1, weight=1)
+
+    ttk.Label(
+        results_frame,
+        text="Simulation Results"
+    ).grid(
+        row=0,
+        column=0,
+        columnspan=2,
+        pady=(0, 20)
+    )
+
+    # ========================================================
+    # Configuration
+    # ========================================================
+
+    configuration_frame = ttk.LabelFrame(
+        results_frame,
+        text="Configuration",
+        padding=15
+    )
+
+    configuration_frame.grid(
+        row=1,
+        column=0,
+        columnspan=2,
+        sticky="we",
+        pady=(0, 20)
+    )
+
+    configuration_nodes_label = ttk.Label(
+        configuration_frame,
+        text="Number of Nodes: -"
+    )
+
+    configuration_nodes_label.grid(
+        row=0,
+        column=0,
+        padx=15
+    )
+
+    configuration_runs_label = ttk.Label(
+        configuration_frame,
+        text="Number of Average Runs: -"
+    )
+
+    configuration_runs_label.grid(
+        row=0,
+        column=1,
+        padx=15
+    )
+
+    configuration_difficulty_label = ttk.Label(
+        configuration_frame,
+        text="PoW Leading Zeroes : -"
+    )
+
+    configuration_difficulty_label.grid(
+        row=0,
+        column=2,
+        padx=15
+    )
+
+    configuration_cities_label = ttk.Label(
+        configuration_frame,
+        text="Number of TSP Cities: -"
+    )
+
+    configuration_cities_label.grid(
+        row=0,
+        column=3,
+        padx=15
+    )
+
+    # ========================================================
+    # Benchmark
+    # ========================================================
+
+    benchmark_frame = ttk.LabelFrame(
+        results_frame,
+        text="Benchmark Speed Results",
+        padding=15
+    )
+
+    benchmark_frame.grid(
+        row=2,
+        column=0,
+        columnspan=2,
+        sticky="we",
+        pady=(0, 20)
+    )
+
+    # --------------------------------------------------------
+    # PoW benchmark
+    # --------------------------------------------------------
+
+    ttk.Label(
+        benchmark_frame,
+        text="PoW"
+    ).grid(
+        row=0,
+        column=0,
+        columnspan=2,
+        sticky="w",
+        padx=15,
+        pady=(0, 10)
+    )
+
+    ttk.Label(
+        benchmark_frame,
+        text="Average Hash Rate:"
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w",
+        padx=15,
+        pady=5
+    )
+
+    pow_hash_rate_label = ttk.Label(
+        benchmark_frame,
+        text="- hashes/sec"
+    )
+
+    pow_hash_rate_label.grid(
+        row=1,
+        column=1,
+        sticky="e",
+        padx=15,
+        pady=5
+    )
+
+    # --------------------------------------------------------
+    # PoUW benchmark
+    # --------------------------------------------------------
+
+    ttk.Label(
+        benchmark_frame,
+        text="PoUW"
+    ).grid(
+        row=0,
+        column=2,
+        columnspan=2,
+        sticky="w",
+        padx=15,
+        pady=(0, 10)
+    )
+
+    ttk.Label(
+        benchmark_frame,
+        text="Average Computation Rate:"
+    ).grid(
+        row=1,
+        column=2,
+        sticky="w",
+        padx=15,
+        pady=5
+    )
+
+    pouw_computation_rate_label = ttk.Label(
+        benchmark_frame,
+        text="- computations/sec"
+    )
+
+    pouw_computation_rate_label.grid(
+        row=1,
+        column=3,
+        sticky="e",
+        padx=15,
+        pady=5
+    )
+
+    # ========================================================
+    # PoW results
+    # ========================================================
+
+    pow_results_frame = ttk.LabelFrame(
+        results_frame,
+        text="Proof of Work",
+        padding=15
+    )
+
+    pow_results_frame.grid(
+        row=3,
+        column=0,
+        sticky="nsew",
+        padx=(0, 10),
+        pady=(0, 20)
+    )
+
+    ttk.Label(
+        pow_results_frame,
+        text="Total Hashes Performed:"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="w"
+    )
+
+    average_hashes_label = ttk.Label(
+        pow_results_frame,
+        text="-"
+    )
+
+    average_hashes_label.grid(
+        row=0,
+        column=1,
+        sticky="e",
+        padx=20
+    )
+
+    ttk.Label(
+        pow_results_frame,
+        text="Simulation Time:"
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w"
+    )
+
+    pow_simulation_time_label = ttk.Label(
+        pow_results_frame,
+        text="-"
+    )
+    pow_simulation_time_label.grid(
+        row=1,
+        column=1,
+        sticky="e",
+        padx=20
+    )
+
+    # ========================================================
+    # PoUW results
+    # ========================================================
+
+    pouw_results_frame = ttk.LabelFrame(
+        results_frame,
+        text="Proof of Useful Work",
+        padding=15
+    )
+
+    pouw_results_frame.grid(
+        row=3,
+        column=1,
+        sticky="nsew",
+        padx=(10, 0),
+        pady=(0, 20)
+    )
+
+    ttk.Label(
+        pouw_results_frame,
+        text="Total Computations Performed:"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="w"
+    )
+
+    average_computations_label = ttk.Label(
+        pouw_results_frame,
+        text="-"
+    )
+
+    average_computations_label.grid(
+        row=0,
+        column=1,
+        sticky="e",
+        padx=20
+    )
+
+    ttk.Label(
+        pouw_results_frame,
+        text="Simulation Time:"
+    ).grid(
+        row=1,
+        column=0,
+        sticky="w"
+    )
+
+    pouw_simulation_time_label = ttk.Label(
+        pouw_results_frame,
+        text="-"
+    )
+    pouw_simulation_time_label.grid(
+        row=1,
+        column=1,
+        sticky="e",
+        padx=20
+    )
+
+    # ========================================================
+    # Comparison
+    # ========================================================
+
+    comparison_frame = ttk.LabelFrame(
+        results_frame,
+        text="Comparison",
+        padding=15
+    )
+
+    comparison_frame.grid(
+        row=4,
+        column=0,
+        columnspan=2,
+        sticky="nsew",
+        pady=(0, 20)
+    )
+
+    comparison_frame.columnconfigure(
+        0,
+        weight=1
+    )
+
+    # ========================================================
+    # Node details
+    # ========================================================
+
+    node_frame = ttk.LabelFrame(
+        results_frame,
+        text="Node Details",
+        padding=15
+    )
+
+    node_frame.grid(
+        row=5,
+        column=0,
+        columnspan=2,
+        sticky="we",
+        pady=(0, 20)
+    )
+
+    # ========================================================
+    # Back button
+    # ========================================================
+
+    back_button = ttk.Button(
+        results_frame,
+        text="Back",
+        command=show_settings
+    )
+
+    back_button.grid(
+        row=6,
+        column=0,
+        columnspan=2,
+        pady=(0, 10)
+    )
+
+    # ========================================================
+    # Center window
+    # ========================================================
+
+    root.update_idletasks()
+
+    width = root.winfo_reqwidth()
+    height = root.winfo_reqheight()
+
+    x = (
+        root.winfo_screenwidth() - width
+    ) // 2
+
+    y = (
+        root.winfo_screenheight() - height
+    ) // 2
+
+    root.geometry(
+        f"{width}x{height}+{x}+{y}"
+    )
+
+    # ========================================================
+    # Start Tkinter
+    # ========================================================
+
+    root.mainloop()
+
+
+# ============================================================
+# Run settings
+# ============================================================
+
 def run_settings():
 
-    num_of_nodes = nodes.get()
-    num_of_runs = runs.get()
-    num_of_cities = cities.get()
-    block_hash_difficulty = difficulty.get()
-
-    # ---------------------------------------------
-    # Determine which validation mode was selected
-    # ---------------------------------------------
+    # --------------------------------------------------------
+    # Convert validation selection
+    # --------------------------------------------------------
 
     if validation.get() == "none":
-        selected_validation = NO_VALIDATION
+        validation_mode = NO_VALIDATION
 
     elif validation.get() == "proof":
-        selected_validation = PROOF_VALIDATION
+        validation_mode = PROOF_VALIDATION
 
     elif validation.get() == "council":
-        selected_validation = COUNCIL_VALIDATION
+        validation_mode = COUNCIL_VALIDATION
 
-    # ---------------------------------------------
-    # Always run the baseline first
-    # ---------------------------------------------
+    else:
+        validation_mode = NO_VALIDATION
 
-    validation_modes = [NO_VALIDATION]
+    # --------------------------------------------------------
+    # Create MainFunctions
+    # --------------------------------------------------------
 
-    if selected_validation != NO_VALIDATION:
-        validation_modes.append(selected_validation)
-
-    # ---------------------------------------------
-    # Run simulations
-    # ---------------------------------------------
-
-    results = []
-
-    for validation_mode in validation_modes:
-
-        simulation = MainFunctions(
-            num_of_nodes,
-            num_of_cities,
-            num_of_runs,
-            block_hash_difficulty,
-            validation_mode
-        )
-
-        average_hashes, average_computations = (
-            simulation.run_simulation()
-        )
-
-        results.append(
-            (
-                validation_mode,
-                average_hashes,
-                average_computations
-            )
-        )
-
-    # ---------------------------------------------
-    # Baseline result
-    # ---------------------------------------------
-
-    no_validation_result = results[0]
-
-    no_validation_hashes = no_validation_result[1]
-    no_validation_computations = no_validation_result[2]
-
-    # ---------------------------------------------
-    # Update main result numbers
-    # ---------------------------------------------
-
-    average_hashes_label.config(
-        text=f"{no_validation_hashes:,.2f}"
+    main_functions = MainFunctions(
+        nodes.get(),
+        cities.get(),
+        runs.get(),
+        difficulty.get(),
+        validation_mode
     )
 
-    average_computations_label.config(
-        text=f"{no_validation_computations:,.2f}"
-    )
+    # --------------------------------------------------------
+    # Run simulation
+    # --------------------------------------------------------
 
-    # ---------------------------------------------
-    # Update configuration labels
-    # ---------------------------------------------
+    data = main_functions.run_simulation()
+
+    # --------------------------------------------------------
+    # Display results
+    # --------------------------------------------------------
+
+    display_results(data)
+
+
+# ============================================================
+# Display simulation results
+# ============================================================
+
+def display_results(data):
 
     configuration_nodes_label.config(
-        text=f"Nodes: {num_of_nodes}"
+        text=f"Number of Nodes: {nodes.get()}"
     )
 
     configuration_runs_label.config(
-        text=f"Runs: {num_of_runs}"
+        text=f"Number of Average Runs: {runs.get()}"
     )
 
     configuration_difficulty_label.config(
-        text=f"PoW Difficulty: {block_hash_difficulty}"
+        text=f"PoW Leading Zeroes: {difficulty.get()}"
     )
 
     configuration_cities_label.config(
-        text=f"Cities: {num_of_cities}"
+        text=f"Number of TSP Cities: {cities.get()}"
     )
 
-    # ---------------------------------------------
-    # Create graphs
-    # ---------------------------------------------
+    # --------------------------------------------------------
+    # Benchmark speed
+    # --------------------------------------------------------
 
-    show_comparison_graph(results)
+    pow_rates = data["pow"]["average_hash_rate"]
+    pouw_rates = data["pouw"]["average_search_rate"]
+
+    average_pow_hash_rate = (
+        sum(pow_rates.values())
+        / len(pow_rates)
+    )
+
+    average_pouw_computation_rate = (
+        sum(pouw_rates.values())
+        / len(pouw_rates)
+    )
+
+    pow_hash_rate_label.config(
+        text=f"{average_pow_hash_rate:.2f} hashes/sec"
+    )
+
+    pouw_computation_rate_label.config(
+        text=f"{average_pouw_computation_rate:.2f} computations/sec"
+    )
+
+    # --------------------------------------------------------
+    # Total computational work
+    # --------------------------------------------------------
+
+    average_hashes = data["average_hashes"]
+    average_computations = data["average_computations"]
+    average_pow_simulation_time = data["average_pow_simulation_time"]
+    average_pouw_simulation_time = data["average_pouw_simulation_time"]
+
+    average_hashes_label.config(
+        text=f"{average_hashes:.2f}"
+    )
+
+    average_computations_label.config(
+        text=f"{average_computations:.2f}"
+    )
+
+    pow_simulation_time_label.config(
+        text=f"{average_pow_simulation_time:.2f} s"
+    )
+
+    pouw_simulation_time_label.config(
+        text=f"{average_pouw_simulation_time:.2f} s"
+    )
+
+    # --------------------------------------------------------
+    # Node details
+    # --------------------------------------------------------
+
+    show_node_details(data)
+
+    # --------------------------------------------------------
+    # Comparison graph
+    # --------------------------------------------------------
+
+    show_comparison_graph(data)
+
+    # --------------------------------------------------------
+    # Switch screens
+    # --------------------------------------------------------
 
     settings_frame.grid_remove()
-    results_container.grid()
 
-def show_comparison_graph(results):
+    results_container.grid(
+        row=0,
+        column=0,
+        sticky="nsew"
+    )
 
-    # Remove any previous graphs.
+    results_canvas.yview_moveto(0)
+
+# ============================================================
+# Node details
+# ============================================================
+
+def show_node_details(data):
+
+
+    # --------------------------------------------------------
+    # Remove previous node details
+    # --------------------------------------------------------
+
+    for widget in node_frame.winfo_children():
+        widget.destroy()
+
+
+    # ========================================================
+    # Calculate PoW winner counts
+    # ========================================================
+
+    pow_wins = {}
+
+    for run in data["pow"]["runs"]:
+
+        winner_name = run["winner"]["name"]
+
+        pow_wins[winner_name] = (
+            pow_wins.get(winner_name, 0) + 1
+        )
+
+    # ========================================================
+    # Calculate PoUW winner counts
+    # ========================================================
+
+    pouw_wins = {}
+
+    for run in data["pouw"]["runs"]:
+        winner_name = run["winner"]["name"]
+
+        pouw_wins[winner_name] = (
+            pouw_wins.get(winner_name, 0) + 1
+        )
+
+    # ========================================================
+    # Sort winners by number of wins
+    # ========================================================
+
+    pow_wins = sorted(
+        pow_wins.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    pouw_wins = sorted(
+        pouw_wins.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    # --------------------------------------------------------
+    # PoW node results
+    # --------------------------------------------------------
+
+    ttk.Label(
+        node_frame,
+        text="PoW Node Results"
+    ).grid(
+        row=0,
+        column=0,
+        columnspan=5,
+        sticky="w",
+        pady=(0, 10)
+    )
+
+    pow_mining_counts = (
+        data["pow"]["average_mining_count"]
+    )
+
+    for column, (
+        node_name,
+        mining_count
+    ) in enumerate(
+        pow_mining_counts.items()
+    ):
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"{node_name}: "
+                f"{mining_count:.2f} hashes"
+            )
+        ).grid(
+            row=1,
+            column=column,
+            padx=10,
+            pady=5
+        )
+
+    # --------------------------------------------------------
+    # PoUW node results
+    # --------------------------------------------------------
+
+    ttk.Label(
+        node_frame,
+        text="PoUW Node Results"
+    ).grid(
+        row=2,
+        column=0,
+        columnspan=5,
+        sticky="w",
+        pady=(20, 10)
+    )
+
+    pouw_computations = (
+        data["pouw"]["average_computations"]
+    )
+
+    for column, (
+        node_name,
+        computations
+    ) in enumerate(
+        pouw_computations.items()
+    ):
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"{node_name}: "
+                f"{computations:.2f} computations"
+            )
+        ).grid(
+            row=3,
+            column=column,
+            padx=10,
+            pady=5
+        )
+
+    # --------------------------------------------------------
+    # PoW winners
+    # --------------------------------------------------------
+
+    row = 4
+
+    ttk.Label(
+        node_frame,
+        text="PoW Winners"
+    ).grid(
+        row=row,
+        column=0,
+        columnspan=5,
+        sticky="w",
+        pady=(25, 10)
+    )
+
+    row += 1
+
+    for run_number, run in enumerate(
+        data["pow"]["runs"],
+        start=1
+    ):
+
+        winner = run["winner"]
+
+        ttk.Label(
+            node_frame,
+            text=f"Run {run_number}"
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w",
+            pady=(10, 2)
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Finishing node: "
+                f"{winner['name']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Hashes: "
+                f"{winner['hashes']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Nonce: "
+                f"{winner['nonce']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Extra nonce: "
+                f"{winner['extra_nonce']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Hash: "
+                f"{winner['header_hash']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+    # --------------------------------------------------------
+    # PoUW winners
+    # --------------------------------------------------------
+
+    ttk.Label(
+        node_frame,
+        text="PoUW Winners"
+    ).grid(
+        row=row,
+        column=0,
+        columnspan=5,
+        sticky="w",
+        pady=(25, 10)
+    )
+
+    row += 1
+
+    for run_number, run in enumerate(
+        data["pouw"]["runs"],
+        start=1
+    ):
+
+        winner = run["winner"]
+
+        ttk.Label(
+            node_frame,
+            text=f"Run {run_number}"
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w",
+            pady=(10, 2)
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Winning TSP node: "
+                f"{winner['name']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Path: "
+                f"{winner['path']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Cost: "
+                f"{winner['cost']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Total cost: "
+                f"{winner['total_cost']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Vertex: "
+                f"{winner['vertex']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"Visited: "
+                f"{winner['visited']}"
+            )
+        ).grid(
+            row=row,
+            column=0,
+            sticky="w"
+        )
+
+        row += 1
+
+# ============================================================
+# Comparison graph
+# ============================================================
+
+def show_comparison_graph(data):
+
+    # --------------------------------------------------------
+    # Remove previous graphs
+    # --------------------------------------------------------
+
     for widget in comparison_frame.winfo_children():
         widget.destroy()
 
-    no_validation = results[0]
+    # --------------------------------------------------------
+    # Baseline PoW and PoUW
+    # --------------------------------------------------------
 
-    no_validation_hashes = no_validation[1]
-    no_validation_computations = no_validation[2]
+    average_hashes = data["average_hashes"]
 
-    validation_results = results[1:]
+    average_computations = data["average_computations"]
 
-    # Always show the baseline.
+    # --------------------------------------------------------
+    # Graph 1: PoW vs PoUW
+    # --------------------------------------------------------
+
     create_comparison_graph(
         comparison_frame,
-        "No Validation",
-        no_validation_hashes,
-        no_validation_computations
-    )
-
-    # Show a separate comparison for every selected validator.
-    for (
-        validation_mode,
-        average_hashes,
-        average_computations
-    ) in validation_results:
-
-        if validation_mode == PROOF_VALIDATION:
-            title = "Proof Validation"
-
-        elif validation_mode == COUNCIL_VALIDATION:
-            title = "Council Validation"
-
-        else:
-            continue
-
-        create_validation_comparison_graph(
-            comparison_frame,
-            title,
-            no_validation_hashes,
-            no_validation_computations,
+        "PoW vs PoUW",
+        [
+            "PoW",
+            "PoUW"
+        ],
+        [
             average_hashes,
             average_computations
-        )
+        ],
+        "Computational Work"
+    )
 
+    # --------------------------------------------------------
+    # Graph 2: PoUW vs PoUW + Validation
+    # --------------------------------------------------------
+
+    selected_validation = validation.get()
+
+    if selected_validation == "none":
+        return
+
+    validated_computations = (
+        data["validated_pouw"]["average_computations"]
+    )
+
+    if selected_validation == "proof":
+
+        validation_name = "PoUW + Proof Validation"
+
+    elif selected_validation == "council":
+
+        validation_name = "PoUW + Council Validation"
+
+    else:
+
+        return
+
+    create_comparison_graph(
+        comparison_frame,
+        "PoUW Validation Comparison",
+        [
+            "PoUW",
+            validation_name
+        ],
+        [
+            average_computations,
+            validated_computations
+        ],
+        "Computational Work"
+    )
 
 def create_comparison_graph(
     parent,
     title,
-    average_hashes,
-    average_computations
+    methods,
+    values,
+    ylabel
 ):
 
     frame = ttk.LabelFrame(
@@ -191,120 +1598,17 @@ def create_comparison_graph(
 
     ax = figure.add_subplot(111)
 
-    methods = [
-        "PoW",
-        "PoUW"
-    ]
-
-    values = [
-        average_hashes,
-        average_computations
-    ]
-
     ax.bar(
         methods,
         values
     )
 
     ax.set_title(
-        "PoW vs PoUW"
-    )
-
-    ax.set_ylabel(
-        "Computational Work"
-    )
-
-    figure.tight_layout()
-
-    canvas = FigureCanvasTkAgg(
-        figure,
-        master=frame
-    )
-
-    canvas.draw()
-
-    canvas.get_tk_widget().pack(
-        fill="both",
-        expand=True
-    )
-
-
-def create_validation_comparison_graph(
-    parent,
-    title,
-    no_validation_hashes,
-    no_validation_computations,
-    validation_hashes,
-    validation_computations
-):
-
-    frame = ttk.LabelFrame(
-        parent,
-        text=title,
-        padding=10
-    )
-
-    frame.pack(
-        fill="both",
-        expand=True,
-        pady=10
-    )
-
-    figure = Figure(
-        figsize=(9, 3),
-        dpi=100
-    )
-
-    ax1 = figure.add_subplot(121)
-    ax2 = figure.add_subplot(122)
-
-    methods = [
-        "PoW",
-        "PoUW"
-    ]
-
-    # -------------------------
-    # No validation
-    # -------------------------
-
-    values = [
-        no_validation_hashes,
-        no_validation_computations
-    ]
-
-    ax1.bar(
-        methods,
-        values
-    )
-
-    ax1.set_title(
-        "No Validation"
-    )
-
-    ax1.set_ylabel(
-        "Computational Work"
-    )
-
-    # -------------------------
-    # Validation
-    # -------------------------
-
-    values = [
-        validation_hashes,
-        validation_computations
-    ]
-
-    ax2.bar(
-        methods,
-        values
-    )
-
-    ax2.set_title(
         title
     )
 
-    ax2.set_ylabel(
-        "Computational Work"
+    ax.set_ylabel(
+        ylabel
     )
 
     figure.tight_layout()
@@ -321,921 +1625,16 @@ def create_validation_comparison_graph(
         expand=True
     )
 
-
 # ============================================================
-# Main window
-# ============================================================
-
-root = tk.Tk()
-
-root.title("PoW vs PoUW Simulation")
-
-root.columnconfigure(0, weight=1)
-root.rowconfigure(0, weight=1)
-
-
-# ============================================================
-# Settings frame
+# Return to settings
 # ============================================================
 
-settings_frame = ttk.Frame(
-    root,
-    padding=20
-)
+def show_settings():
 
-settings_frame.grid(
-    column=0,
-    row=0,
-    sticky="wnes"
-)
+    results_container.grid_remove()
 
-settings_frame.columnconfigure(0, weight=1)
-settings_frame.columnconfigure(1, weight=1)
-
-
-title = ttk.Label(
-    settings_frame,
-    text="PoW vs PoUW Benchmark"
-)
-
-title.grid(
-    row=0,
-    column=0,
-    columnspan=2,
-    pady=(0, 20)
-)
-
-
-# ============================================================
-# Benchmark settings
-# ============================================================
-
-benchmark_frame = ttk.LabelFrame(
-    settings_frame,
-    text="Benchmark settings",
-    padding=15
-)
-
-benchmark_frame.grid(
-    row=1,
-    column=0,
-    columnspan=2,
-    sticky="we",
-    pady=(0, 20)
-)
-
-benchmark_frame.columnconfigure(1, weight=1)
-
-
-ttk.Label(
-    benchmark_frame,
-    text="Number of Nodes"
-).grid(
-    row=0,
-    column=0,
-    sticky="w",
-    padx=5,
-    pady=10
-)
-
-
-nodes_frame = ttk.Frame(
-    benchmark_frame
-)
-
-nodes_frame.grid(
-    row=0,
-    column=1,
-    sticky="w",
-    padx=10
-)
-
-
-nodes = tk.IntVar(
-    value=4
-)
-
-
-ttk.Radiobutton(
-    nodes_frame,
-    text="3",
-    variable=nodes,
-    value=3
-).grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-ttk.Radiobutton(
-    nodes_frame,
-    text="4",
-    variable=nodes,
-    value=4
-).grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-ttk.Radiobutton(
-    nodes_frame,
-    text="5",
-    variable=nodes,
-    value=5
-).grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-ttk.Label(
-    benchmark_frame,
-    text="Number of Runs"
-).grid(
-    row=1,
-    column=0,
-    sticky="w",
-    padx=5,
-    pady=10
-)
-
-
-runs_frame = ttk.Frame(
-    benchmark_frame
-)
-
-runs_frame.grid(
-    row=1,
-    column=1,
-    sticky="w",
-    padx=10
-)
-
-
-runs = tk.IntVar(
-    value=10
-)
-
-
-ttk.Radiobutton(
-    runs_frame,
-    text="5",
-    variable=runs,
-    value=5
-).grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-ttk.Radiobutton(
-    runs_frame,
-    text="10",
-    variable=runs,
-    value=10
-).grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-ttk.Radiobutton(
-    runs_frame,
-    text="20",
-    variable=runs,
-    value=20
-).grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-# ============================================================
-# PoW settings
-# ============================================================
-
-pow_settings_frame = ttk.LabelFrame(
-    settings_frame,
-    text="PoW Settings",
-    padding=15
-)
-
-pow_settings_frame.grid(
-    row=2,
-    column=0,
-    sticky="nesw",
-    padx=(0, 10),
-    pady=(0, 20)
-)
-
-pow_settings_frame.columnconfigure(
-    1,
-    weight=1
-)
-
-
-ttk.Label(
-    pow_settings_frame,
-    text="Difficulty"
-).grid(
-    row=0,
-    column=0,
-    sticky="w",
-    padx=5,
-    pady=10
-)
-
-
-difficulty_frame = ttk.Frame(
-    pow_settings_frame
-)
-
-difficulty_frame.grid(
-    row=0,
-    column=1,
-    sticky="w",
-    padx=10
-)
-
-
-difficulty = tk.IntVar(
-    value=4
-)
-
-
-ttk.Radiobutton(
-    difficulty_frame,
-    text="Low",
-    variable=difficulty,
-    value=2
-).grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-ttk.Radiobutton(
-    difficulty_frame,
-    text="Medium",
-    variable=difficulty,
-    value=4
-).grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-ttk.Radiobutton(
-    difficulty_frame,
-    text="High",
-    variable=difficulty,
-    value=6
-).grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-# ============================================================
-# PoUW settings
-# ============================================================
-
-pouw_settings_frame = ttk.LabelFrame(
-    settings_frame,
-    text="PoUW Settings",
-    padding=15
-)
-
-pouw_settings_frame.grid(
-    row=2,
-    column=1,
-    sticky="nesw",
-    padx=(10, 0),
-    pady=(0, 20)
-)
-
-pouw_settings_frame.columnconfigure(
-    1,
-    weight=1
-)
-
-
-ttk.Label(
-    pouw_settings_frame,
-    text="Number of Cities",
-    width=18
-).grid(
-    row=0,
-    column=0,
-    sticky="w",
-    padx=5,
-    pady=10
-)
-
-
-cities_frame = ttk.Frame(
-    pouw_settings_frame
-)
-
-cities_frame.grid(
-    row=0,
-    column=1,
-    sticky="w",
-    padx=10
-)
-
-
-cities = tk.IntVar(
-    value=9
-)
-
-
-ttk.Radiobutton(
-    cities_frame,
-    text="7",
-    variable=cities,
-    value=7
-).grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-ttk.Radiobutton(
-    cities_frame,
-    text="9",
-    variable=cities,
-    value=9
-).grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-ttk.Radiobutton(
-    cities_frame,
-    text="11",
-    variable=cities,
-    value=11
-).grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-ttk.Label(
-    pouw_settings_frame,
-    text="Verification",
-    width=18
-).grid(
-    row=1,
-    column=0,
-    sticky="w",
-    padx=5,
-    pady=10
-)
-
-
-verification_frame = ttk.Frame(
-    pouw_settings_frame
-)
-
-verification_frame.grid(
-    row=1,
-    column=1,
-    sticky="w",
-    padx=10
-)
-
-validation = tk.StringVar(
-    value="none"
-)
-
-ttk.Radiobutton(
-    verification_frame,
-    text="None",
-    variable=validation,
-    value="none"
-).grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-ttk.Radiobutton(
-    verification_frame,
-    text="Proof validation",
-    variable=validation,
-    value="proof"
-).grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-ttk.Radiobutton(
-    verification_frame,
-    text="Council validation",
-    variable=validation,
-    value="council"
-).grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-# ============================================================
-# Run button
-# ============================================================
-
-run_button = ttk.Button(
-    settings_frame,
-    text="Run",
-    command=run_settings
-)
-
-run_button.grid(
-    row=3,
-    column=0,
-    columnspan=2,
-    pady=(10, 20)
-)
-
-
-# ============================================================
-# Results container
-# ============================================================
-
-results_container = ttk.Frame(
-    root
-)
-
-results_container.grid_remove()
-
-results_container.columnconfigure(
-    0,
-    weight=1
-)
-
-results_container.rowconfigure(
-    0,
-    weight=1
-)
-
-
-# ============================================================
-# Results canvas
-# ============================================================
-
-results_canvas = tk.Canvas(
-    results_container,
-    highlightthickness=0
-)
-
-results_canvas.grid(
-    row=0,
-    column=0,
-    sticky="nsew"
-)
-
-
-# ============================================================
-# Scrollbar
-# ============================================================
-
-results_scrollbar = ttk.Scrollbar(
-    results_container,
-    orient="vertical",
-    command=results_canvas.yview
-)
-
-results_scrollbar.grid(
-    row=0,
-    column=1,
-    sticky="ns"
-)
-
-
-# ============================================================
-# Scrollable results frame
-# ============================================================
-
-results_frame = ttk.Frame(
-    results_canvas,
-    padding=20
-)
-
-
-results_window = results_canvas.create_window(
-    (0, 0),
-    window=results_frame,
-    anchor="nw"
-)
-
-
-results_canvas.configure(
-    yscrollcommand=results_scrollbar.set
-)
-
-
-def update_scroll_region(event=None):
-
-    results_canvas.configure(
-        scrollregion=results_canvas.bbox("all")
+    settings_frame.grid(
+        row=0,
+        column=0,
+        sticky="nsew"
     )
-
-
-def resize_results_frame(event):
-
-    results_canvas.itemconfigure(
-        results_window,
-        width=event.width
-    )
-
-
-results_frame.bind(
-    "<Configure>",
-    update_scroll_region
-)
-
-results_canvas.bind(
-    "<Configure>",
-    resize_results_frame
-)
-
-
-def scroll_results(event):
-
-    results_canvas.yview_scroll(
-        int(-1 * (event.delta / 120)),
-        "units"
-    )
-
-
-results_canvas.bind_all(
-    "<MouseWheel>",
-    scroll_results
-)
-
-
-# ============================================================
-# Results layout
-# ============================================================
-
-results_frame.columnconfigure(
-    0,
-    weight=1
-)
-
-results_frame.columnconfigure(
-    1,
-    weight=1
-)
-
-
-ttk.Label(
-    results_frame,
-    text="Simulation Results"
-).grid(
-    row=0,
-    column=0,
-    columnspan=2,
-    pady=(0, 20)
-)
-
-
-# ============================================================
-# Configuration
-# ============================================================
-
-configuration_frame = ttk.LabelFrame(
-    results_frame,
-    text="Configuration",
-    padding=15
-)
-
-configuration_frame.grid(
-    row=1,
-    column=0,
-    columnspan=2,
-    sticky="we",
-    pady=(0, 20)
-)
-
-
-configuration_nodes_label = ttk.Label(
-    configuration_frame,
-    text=f"Nodes: {nodes.get()}"
-)
-
-configuration_nodes_label.grid(
-    row=0,
-    column=0,
-    padx=15
-)
-
-
-configuration_runs_label = ttk.Label(
-    configuration_frame,
-    text=f"Runs: {runs.get()}"
-)
-
-configuration_runs_label.grid(
-    row=0,
-    column=1,
-    padx=15
-)
-
-
-configuration_difficulty_label = ttk.Label(
-    configuration_frame,
-    text=f"PoW Difficulty: {difficulty.get()}"
-)
-
-configuration_difficulty_label.grid(
-    row=0,
-    column=2,
-    padx=15
-)
-
-
-configuration_cities_label = ttk.Label(
-    configuration_frame,
-    text=f"Cities: {cities.get()}"
-)
-
-configuration_cities_label.grid(
-    row=0,
-    column=3,
-    padx=15
-)
-
-
-# ============================================================
-# PoW results
-# ============================================================
-
-pow_results_frame = ttk.LabelFrame(
-    results_frame,
-    text="Proof of Work",
-    padding=15
-)
-
-pow_results_frame.grid(
-    row=2,
-    column=0,
-    sticky="nesw",
-    padx=(0, 10),
-    pady=(0, 20)
-)
-
-
-ttk.Label(
-    pow_results_frame,
-    text="Hash Rate"
-).grid(
-    row=0,
-    column=0,
-    sticky="w"
-)
-
-
-ttk.Label(
-    pow_results_frame,
-    text="X hashes/sec"
-).grid(
-    row=0,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-ttk.Label(
-    pow_results_frame,
-    text="Average Hashes"
-).grid(
-    row=1,
-    column=0,
-    sticky="w"
-)
-
-
-average_hashes_label = ttk.Label(
-    pow_results_frame,
-    text=""
-)
-
-average_hashes_label.grid(
-    row=1,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-ttk.Label(
-    pow_results_frame,
-    text="Average Simulation Time"
-).grid(
-    row=2,
-    column=0,
-    sticky="w"
-)
-
-
-ttk.Label(
-    pow_results_frame,
-    text="XX.xx seconds"
-).grid(
-    row=2,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-# ============================================================
-# PoUW results
-# ============================================================
-
-pouw_results_frame = ttk.LabelFrame(
-    results_frame,
-    text="Proof of Useful Work",
-    padding=15
-)
-
-pouw_results_frame.grid(
-    row=2,
-    column=1,
-    sticky="nesw",
-    padx=(10, 0),
-    pady=(0, 20)
-)
-
-
-ttk.Label(
-    pouw_results_frame,
-    text="Computation Rate"
-).grid(
-    row=0,
-    column=0,
-    sticky="w"
-)
-
-
-ttk.Label(
-    pouw_results_frame,
-    text="X computations/sec"
-).grid(
-    row=0,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-ttk.Label(
-    pouw_results_frame,
-    text="Average Computations"
-).grid(
-    row=1,
-    column=0,
-    sticky="w"
-)
-
-
-average_computations_label = ttk.Label(
-    pouw_results_frame,
-    text=""
-)
-
-average_computations_label.grid(
-    row=1,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-ttk.Label(
-    pouw_results_frame,
-    text="Average Simulation Time"
-).grid(
-    row=2,
-    column=0,
-    sticky="w"
-)
-
-
-ttk.Label(
-    pouw_results_frame,
-    text="XX.xx seconds"
-).grid(
-    row=2,
-    column=1,
-    sticky="e",
-    padx=20
-)
-
-
-# ============================================================
-# Comparison
-# ============================================================
-
-comparison_frame = ttk.LabelFrame(
-    results_frame,
-    text="Comparison",
-    padding=15
-)
-
-comparison_frame.grid(
-    row=3,
-    column=0,
-    columnspan=2,
-    sticky="nesw",
-    pady=(0, 20)
-)
-
-
-comparison_frame.columnconfigure(
-    0,
-    weight=1
-)
-
-
-# ============================================================
-# Simulation details
-# ============================================================
-
-node_frame = ttk.LabelFrame(
-    results_frame,
-    text="Simulation Details",
-    padding=15
-)
-
-node_frame.grid(
-    row=4,
-    column=0,
-    columnspan=2,
-    sticky="we",
-    pady=(0, 20)
-)
-
-
-ttk.Label(
-    node_frame,
-    text="PoW Node Results"
-).grid(
-    row=0,
-    column=0,
-    columnspan=4,
-    sticky="w",
-    pady=(0, 10)
-)
-
-
-ttk.Label(
-    node_frame,
-    text="Node 1: X hashes/sec"
-).grid(
-    row=1,
-    column=0,
-    padx=10
-)
-
-
-ttk.Label(
-    node_frame,
-    text="Node 2: X hashes/sec"
-).grid(
-    row=1,
-    column=1,
-    padx=10
-)
-
-
-ttk.Label(
-    node_frame,
-    text="Node 3: X hashes/sec"
-).grid(
-    row=1,
-    column=2,
-    padx=10
-)
-
-
-ttk.Label(
-    node_frame,
-    text="Node 4: X hashes/sec"
-).grid(
-    row=1,
-    column=3,
-    padx=10
-)

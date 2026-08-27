@@ -4,10 +4,13 @@ import utils
 import benchmark
 import multiprocessing
 from blockData import BlockData
-from blockFunctions import BlockFunctions
 from validation import council_validation
 from validation import proof_based_validation
 
+# Validation modes
+NO_VALIDATION = 0b00
+PROOF_VALIDATION = 0b01
+COUNCIL_VALIDATION = 0b10
 
 class MainFunctions:
 
@@ -16,13 +19,15 @@ class MainFunctions:
         num_of_nodes,
         num_of_cities,
         runs,
-        block_hash_difficulty
+        block_hash_difficulty,
+        validation_mode
     ):
         # Store the main simulation parameters.
         self.num_of_nodes = num_of_nodes
         self.num_of_cities = num_of_cities
         self.runs = runs
         self.block_hash_difficulty = block_hash_difficulty
+        self.validation_mode = validation_mode
 
         # Measure the average PoW hash rate over multiple benchmark runs.
         hashes_per_second = utils.average_runs(
@@ -57,6 +62,8 @@ class MainFunctions:
 
         # Generate the shared TSP problem for all PoUW nodes.
         Node.initialize_tsp(self.num_of_cities)
+        if (self.validation_mode & PROOF_VALIDATION):
+            Node.initialize_transcript()
 
         self.node_list = []
 
@@ -389,31 +396,35 @@ class MainFunctions:
                 )
 
                 print("\n\n")
-
-                council = [
-                    node for node in self.node_list
-                    if node is not finishing_node
-                    ]
                 
-                result, validation_computations = council_validation(
-                    self.node_list[0].tsp,
-                    council,
-                    self.node_list[0].tsp.best_path,
-                    self.node_list[0].tsp.best_cost,
-                    self.runs
+                if self.validation_mode & PROOF_VALIDATION:
+                    proof_based_validation(
+                        self.node_list[0].tsp,
+                        self.node_list[0].tsp.best_path,
+                        self.node_list[0].tsp.best_cost,
+                        Node.transcript
                     )
-                
-                print(f"Council result: {result}")
-                print(f"Validation computations: {validation_computations}")
-                
-                """
-                proof_based_validation(
-                                                    self.node_list[0].tsp,
-                                                    self.node_list[0].tsp.best_path,
-                                                    self.node_list[0].tsp.best_cost,
-                                                    Node.transcript
-                                
-                """
+
+                if self.validation_mode & COUNCIL_VALIDATION:
+
+                    council = [
+                        node for node in self.node_list
+                        if node is not finishing_node
+                    ]
+
+                    result, validation_computations = council_validation(
+                        self.node_list[0].tsp,
+                        council,
+                        self.node_list[0].tsp.best_path,
+                        self.node_list[0].tsp.best_cost,
+                        self.runs
+                    )
+
+                    print(f"Council result: {result}")
+                    print(
+                        f"Validation computations: "
+                        f"{validation_computations}"
+                    )
 
                 return total_computations
 

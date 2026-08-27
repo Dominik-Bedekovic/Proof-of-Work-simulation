@@ -27,7 +27,9 @@ class Node:
     def initialize_tsp(cls, num_of_nodes):
         # Generate the shared TSP problem used during the PoUW simulation.
         cls.tsp = TspData(num_of_nodes)
-        #cls.transcript = Transcript()
+    @classmethod
+    def initialize_transcript(cls):
+        cls.transcript = Transcript()
 
     def __init__(self, name):
         # Identifier used to distinguish individual nodes.

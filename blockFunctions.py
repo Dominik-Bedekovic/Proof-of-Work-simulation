@@ -1,31 +1,42 @@
 import utils
 
+
 class BlockFunctions:
 
     @staticmethod
     def calculate_merkle_root(block_transactions, node_coinbase):
-    
-            transaction_string = ''
-            for transaction in block_transactions:
-                transaction_string += str(transaction)  
-            #print("Transaction string: " + transaction_string)
-    
-            coinbase_string = ''
-            for value in node_coinbase.values():
-                coinbase_string += str(value) 
-            #print("Coinbase string: " + coinbase_string)
-    
-            merkle_root = transaction_string + coinbase_string
-    
-            return utils.create_hash(merkle_root)
+        # Combine all block transactions into one string.
+        transaction_string = ''
+
+        for transaction in block_transactions:
+            transaction_string += str(transaction)
+
+        # Combine the values of the coinbase transaction into one string.
+        coinbase_string = ''
+
+        for value in node_coinbase.values():
+            coinbase_string += str(value)
+
+        # Combine the transaction and coinbase data.
+        merkle_root = transaction_string + coinbase_string
+
+        # Hash the combined data to create the Merkle root.
+        return utils.create_hash(merkle_root)
 
     @staticmethod
-    def create_header_hash(block_prev_hash, block_timestamp, merkle_root, node_nonce):
-        #print("block previous hash:" + self.blockData.previous_hash)
-        #print("timestamp: " + str(self.blockData.timestamp))
-        #print("merkle root hash: " + self.merkle_root)
-            
-        data = (block_prev_hash + block_timestamp
-                    + merkle_root + str(node_nonce))
-    
+    def create_header_hash(
+        block_prev_hash,
+        block_timestamp,
+        merkle_root,
+        node_nonce
+    ):
+        # Combine the block header fields into one string.
+        data = (
+            block_prev_hash
+            + block_timestamp
+            + merkle_root
+            + str(node_nonce)
+        )
+
+        # Hash the block header using SHA-256.
         return utils.create_hash(data)

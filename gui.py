@@ -241,7 +241,7 @@ def start_gui():
     runs_scale = ttk.Scale(
         benchmark_settings_frame,
         from_=1,
-        to=10,
+        to=5,
         orient="horizontal",
         variable=runs,
         command=update_runs
@@ -294,11 +294,11 @@ def start_gui():
         pady=10
     )
 
-    difficulty = tk.IntVar(value=6)
+    difficulty = tk.IntVar(value=4)
 
     difficulty_value_label = ttk.Label(
         pow_settings_frame,
-        text="6"
+        text="4"
     )
 
     difficulty_value_label.grid(
@@ -317,7 +317,7 @@ def start_gui():
     difficulty_scale = ttk.Scale(
         pow_settings_frame,
         from_=1,
-        to=32,
+        to=8,
         orient="horizontal",
         variable=difficulty,
         command=update_difficulty
@@ -370,11 +370,11 @@ def start_gui():
         pady=10
     )
 
-    cities = tk.IntVar(value=12)
+    cities = tk.IntVar(value=10)
 
     cities_value_label = ttk.Label(
         pouw_settings_frame,
-        text="12"
+        text="10"
     )
 
     cities_value_label.grid(
@@ -393,7 +393,7 @@ def start_gui():
     cities_scale = ttk.Scale(
         pouw_settings_frame,
         from_=3,
-        to=20,
+        to=15,
         orient="horizontal",
         variable=cities,
         command=update_cities

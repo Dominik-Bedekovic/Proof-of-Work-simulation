@@ -10,6 +10,7 @@ class TspData:
         # Store the number of cities in the TSP instance.
         self.size = size
 
+        # The matrix used for benchmarking
         if benchmark:
             self.matrix = [
                 [utils.inf, 20, 200, 30, 100, 200, 10, 800, 40, 10, 400],

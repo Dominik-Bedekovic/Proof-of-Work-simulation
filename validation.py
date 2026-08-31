@@ -1,6 +1,5 @@
 from tspData import TspData
 from tspFunctions import TspFunction
-from transcript import Transcript
 import multiprocessing
 import utils
 
@@ -156,6 +155,12 @@ def _validate_node(args):
     elif len(proposed_path) != tsp.size + 1:
         valid = False
 
+    elif any(
+    vertex < 0 or vertex >= tsp.size
+    for vertex in proposed_path[:-1]
+    ):
+        valid = False
+
     # Remove the final repeated starting vertex and check that
     # the remaining vertices are all unique.
     elif len(set(proposed_path[:-1])) != tsp.size:
@@ -280,7 +285,7 @@ def _parallel_branch_validation(
 
     # Retrieve every result placed into the queue by the
     # validator processes.
-    while not result_queue.empty():
+    for _ in processes:
         results.append(
             result_queue.get()
         )
@@ -403,27 +408,13 @@ def _council_voting(
     total_votes,
     ultimate_voters
 ):
-
-    # Calculate the fraction of council members that initially
-    # accepted the proposed solution.
-    vote_ratio_initial = (
-        initial_votes / total_votes
-    )
-
-    # If no validator participated in the ultimate validation,
-    # the council cannot accept the solution.
+    # The council cannot accept the solution if no validator
+    # participated in the ultimate validation stage.
     if ultimate_voters == 0:
         return False
 
-    # Calculate the fraction of active ultimate validators
-    # that accepted the proposed solution.
-    vote_ratio_ultimate = (
-        ultimate_votes / ultimate_voters
-    )
-
-    # Current voting rule:
-    # both validation stages must have at all positive votes.
-    if vote_ratio_initial and vote_ratio_ultimate:
+    # Both validation stages require unanimous approval.
+    if initial_votes == total_votes and ultimate_votes == ultimate_voters:
         return True
 
     return False

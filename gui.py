@@ -218,11 +218,11 @@ def start_gui():
         pady=10
     )
 
-    runs = tk.IntVar(value=5)
+    runs = tk.IntVar(value=3)
 
     runs_value_label = ttk.Label(
         benchmark_settings_frame,
-        text="5"
+        text="3"
     )
 
     runs_value_label.grid(
@@ -922,6 +922,13 @@ def start_gui():
         pady=(0, 20)
     )
 
+    for column in range(4):
+        node_frame.columnconfigure(
+        column,
+        weight=1,
+        minsize=200
+    )
+
     # ========================================================
     # Back button
     # ========================================================
@@ -1126,6 +1133,103 @@ def show_node_details(data):
     for widget in node_frame.winfo_children():
         widget.destroy()
 
+    # ========================================================
+    # Layout settings
+    # ========================================================
+
+    nodes_per_row = 5
+
+    # ========================================================
+    # PoW node results
+    # ========================================================
+
+    ttk.Label(
+        node_frame,
+        text="PoW Node Results"
+    ).grid(
+        row=0,
+        column=0,
+        columnspan=nodes_per_row,
+        sticky="w",
+        pady=(0, 10)
+    )
+
+    pow_rates = data["pow"]["average_hash_rate"]
+
+    for index, (node_name, hash_rate) in enumerate(
+        pow_rates.items()
+    ):
+
+        row = 1 + index // nodes_per_row
+        column = index % nodes_per_row
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"{node_name}: "
+                f"{hash_rate:.2f} hashes/sec"
+            ),
+            width=26
+        ).grid(
+            row=row,
+            column=column,
+            padx=10,
+            pady=5,
+            sticky="w"
+        )
+
+
+
+    # ========================================================
+    # PoUW node results
+    # ========================================================
+
+    pow_rows = (
+        (len(pow_rates) + nodes_per_row - 1)
+        // nodes_per_row
+    )
+
+    pouw_start_row = 1 + pow_rows + 1
+
+    ttk.Label(
+        node_frame,
+        text="PoUW Node Results"
+    ).grid(
+        row=pouw_start_row,
+        column=0,
+        columnspan=nodes_per_row,
+        sticky="w",
+        pady=(20, 10)
+    )
+
+    pouw_rates = data["pouw"]["average_search_rate"]
+
+    for index, (node_name, search_rate) in enumerate(
+        pouw_rates.items()
+    ):
+
+        row = (
+            pouw_start_row
+            + 1
+            + index // nodes_per_row
+        )
+
+        column = index % nodes_per_row
+
+        ttk.Label(
+            node_frame,
+            text=(
+                f"{node_name}: "
+                f"{search_rate:.2f} computations/sec"
+            ),
+            width=30
+        ).grid(
+            row=row,
+            column=column,
+            padx=10,
+            pady=5,
+            sticky="w"
+        )
 
     # ========================================================
     # Calculate PoW winner counts
@@ -1171,88 +1275,10 @@ def show_node_details(data):
     )
 
     # --------------------------------------------------------
-    # PoW node results
-    # --------------------------------------------------------
-
-    ttk.Label(
-        node_frame,
-        text="PoW Node Results"
-    ).grid(
-        row=0,
-        column=0,
-        columnspan=5,
-        sticky="w",
-        pady=(0, 10)
-    )
-
-    pow_mining_counts = (
-        data["pow"]["average_mining_count"]
-    )
-
-    for column, (
-        node_name,
-        mining_count
-    ) in enumerate(
-        pow_mining_counts.items()
-    ):
-
-        ttk.Label(
-            node_frame,
-            text=(
-                f"{node_name}: "
-                f"{mining_count:.2f} hashes"
-            )
-        ).grid(
-            row=1,
-            column=column,
-            padx=10,
-            pady=5
-        )
-
-    # --------------------------------------------------------
-    # PoUW node results
-    # --------------------------------------------------------
-
-    ttk.Label(
-        node_frame,
-        text="PoUW Node Results"
-    ).grid(
-        row=2,
-        column=0,
-        columnspan=5,
-        sticky="w",
-        pady=(20, 10)
-    )
-
-    pouw_computations = (
-        data["pouw"]["average_computations"]
-    )
-
-    for column, (
-        node_name,
-        computations
-    ) in enumerate(
-        pouw_computations.items()
-    ):
-
-        ttk.Label(
-            node_frame,
-            text=(
-                f"{node_name}: "
-                f"{computations:.2f} computations"
-            )
-        ).grid(
-            row=3,
-            column=column,
-            padx=10,
-            pady=5
-        )
-
-    # --------------------------------------------------------
     # PoW winners
     # --------------------------------------------------------
 
-    row = 4
+    row += 2
 
     ttk.Label(
         node_frame,

@@ -5,7 +5,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from mainFunctions import MainFunctions
-
+import time
 
 # ============================================================
 # Validation modes
@@ -980,6 +980,7 @@ def start_gui():
 
 def run_settings():
 
+    start = time.perf_counter()
     # --------------------------------------------------------
     # Convert validation selection
     # --------------------------------------------------------
@@ -1012,7 +1013,16 @@ def run_settings():
     # Run simulation
     # --------------------------------------------------------
 
+    #print(">>> BEFORE run_simulation()", flush=True)
+
     data = main_functions.run_simulation()
+
+    elapsed = time.perf_counter() - start
+
+    with open("timinx.txt", "a") as f:
+        f.write(f"run_settings total: {elapsed:.3f}s\n")
+
+    #print(">>> AFTER run_simulation()", flush=True)
 
     # --------------------------------------------------------
     # Display results
@@ -1097,19 +1107,31 @@ def display_results(data):
     # Node details
     # --------------------------------------------------------
 
+    #print(">>> BEFORE show_node_details()", flush=True)
+
     show_node_details(data)
+
+    #print(">>> AFTER show_node_details()", flush=True)
 
     # --------------------------------------------------------
     # Comparison graph
     # --------------------------------------------------------
 
+    #print(">>> BEFORE show_comparison_graph()", flush=True)
+
     show_comparison_graph(data)
+
+    #print(">>> AFTER show_comparison_graph()", flush=True)
 
     # --------------------------------------------------------
     # Switch screens
     # --------------------------------------------------------
 
+    #print(">>> BEFORE grid_remove()", flush=True)
+
     settings_frame.grid_remove()
+
+    #print(">>> AFTER grid_remove()", flush=True)
 
     results_container.grid(
         row=0,
@@ -1117,7 +1139,11 @@ def display_results(data):
         sticky="nsew"
     )
 
+    #print(">>> AFTER results_container.grid()", flush=True)
+
     results_canvas.yview_moveto(0)
+
+    #print(">>> AFTER yview_moveto()", flush=True)
 
 # ============================================================
 # Node details

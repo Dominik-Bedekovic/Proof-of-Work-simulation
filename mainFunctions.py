@@ -8,7 +8,6 @@ from blockData import BlockData
 from validation import council_validation
 from validation import proof_based_validation
 
-
 # Validation modes
 NO_VALIDATION = 0b00
 PROOF_VALIDATION = 0b01
@@ -18,6 +17,7 @@ COUNCIL_VALIDATION = 0b10
 class MainFunctions:
 
     benchmarks_done = False
+    benchmarked_validation_mode = None
 
     def __init__(
         self,
@@ -28,11 +28,11 @@ class MainFunctions:
         validation_mode,
     ):
         # Reset ratios shared between nodes.
-        Node.pouw_pow_ratio = 0
-        Node.validation_pow_ratio = 0
-        Node.transcript_pouw_ratio = 0
-        Node.path_validation_pow_ratio = 0
-        Node.hash_validation_pow_ratio = 0
+        #Node.pouw_pow_ratio = 0
+        #Node.validation_pow_ratio = 0
+        #Node.transcript_pouw_ratio = 0
+        #Node.path_validation_pow_ratio = 0
+        #Node.hash_validation_pow_ratio = 0
 
         # Store the simulation parameters.
         self.num_of_nodes = num_of_nodes
@@ -43,11 +43,61 @@ class MainFunctions:
 
         # Run benchmarks only once.
         # The benchmark results are reused for subsequent simulations.
-        if not MainFunctions.benchmarks_done:
+        if (
+            not MainFunctions.benchmarks_done
+            or MainFunctions.benchmarked_validation_mode != self.validation_mode
+        ):
+            
             self.run_benchmarks()
+
+        self.set_ratios()
+        self.create_nodes()
+
+    def set_ratios(self):
+        Node.pouw_pow_ratio = (
+            MainFunctions.computations_per_second
+            / MainFunctions.hashes_per_second
+        )
+
+        Node.validation_pow_ratio = 0
+        Node.transcript_pouw_ratio = 0
+        Node.path_validation_pow_ratio = 0
+        Node.hash_validation_pow_ratio = 0
+
+        if self.validation_mode & COUNCIL_VALIDATION:
+            Node.validation_pow_ratio = (
+                MainFunctions.validations_per_second
+                / MainFunctions.hashes_per_second
+            )
+
+        if self.validation_mode & PROOF_VALIDATION:
+            Node.transcript_pouw_ratio = (
+                MainFunctions.transcript_per_second
+                / MainFunctions.computations_per_second
+            )
+
+            Node.path_validation_pow_ratio = (
+                MainFunctions.path_validation_per_second
+                / MainFunctions.hashes_per_second
+            )
+
+            Node.hash_validation_pow_ratio = (
+                MainFunctions.hash_validation_per_second
+                / MainFunctions.hashes_per_second
+            )
 
         # Create the nodes used in the simulation.
         self.create_nodes()
+
+        print(
+            "BENCHMARKS:",
+            MainFunctions.benchmarks_done,
+            "POUW RATIO:",
+            Node.pouw_pow_ratio,
+           "SEARCH RATES:",
+            [node.search_rate for node in self.node_list],
+            flush=True
+        )
 
     def run_benchmarks(self):
         # Measure the average number of SHA-256 hashes
@@ -94,7 +144,7 @@ class MainFunctions:
 
         # Benchmark transcript generation when proof validation is enabled.
         if self.validation_mode & PROOF_VALIDATION:
-            print("INITIALIZING PROOF VALIDATION")
+            #print("INITIALIZING PROOF VALIDATION")
             MainFunctions.transcript_per_second = (
                 utils.average_runs(
                     benchmark.benchmark_transcript,
@@ -139,6 +189,7 @@ class MainFunctions:
 
         # Mark the benchmarks as completed so they are not repeated.
         MainFunctions.benchmarks_done = True
+        MainFunctions.benchmarked_validation_mode = self.validation_mode
 
     # Create the nodes used by the simulation.
     def create_nodes(self):
@@ -160,6 +211,10 @@ class MainFunctions:
             )
 
             self.node_list.append(node)
+
+        
+        if all(node.search_rate <= 0 for node in self.node_list):
+            raise RuntimeError("All PoUW search rates are zero")
 
     # Run the Proof-of-Work simulation.
     def multiple_node_pow(
@@ -325,8 +380,20 @@ class MainFunctions:
                     }
                 }
 
+
     # Run the Proof-of-Useful-Work TSP simulation.
     def multiple_node_pouw_tsp(self):
+
+        if all(node.search_rate <= 0 for node in self.node_list):
+            raise RuntimeError("All PoUW search rates are zero")
+
+        # Time spent performing PoUW mining.
+        # This includes transcript generation because the transcript
+        # is generated during the PoUW search.
+        pouw_time = 0.0
+
+        # Validation time for the selected validation method.
+        validation_time = 0.0
 
         while not Node.found:
 
@@ -334,6 +401,7 @@ class MainFunctions:
 
             # Let every node perform one batch of TSP computations.
             for node in self.node_list:
+
                 (
                     computations,
                     _,
@@ -375,20 +443,36 @@ class MainFunctions:
                     ][0]
                 )
 
+                # Get the transcript time belonging to the
+                # finishing node.
+                finishing_node_transcript_time = (
+                    results[
+                        finishing_node_index
+                    ][1]
+                )
+
                 # Calculate the final fraction of the simulation step.
+                #
+                # The first term represents the fraction of a second
+                # required to perform the finishing node's computations.
+                #
+                # The second term represents the transcript generation
+                # time associated with that batch.
                 winner_time = (
                     finishing_node_computations
                     / finishing_node.search_rate
-                    + transcript_time
+                    + finishing_node_transcript_time
                 )
 
                 # Remove work that would not have been performed
-                # because the winning node finished before the
-                # other nodes completed their current batch.
+                # because the winning node finished before the other
+                # nodes completed their current batch.
                 if finishing_node_computations > 0:
+
                     for i, node in enumerate(
                         self.node_list[:len(results)]
                     ):
+
                         if node is not finishing_node:
 
                             computation_done = (
@@ -405,11 +489,12 @@ class MainFunctions:
                                 - final_batch
                             )
 
-                # Advance the simulation time by the final
-                # fraction of the search interval.
-                Node.simulation_time += (
-                    winner_time
-                )
+                # The time accumulated before the final batch.
+                # winner_time represents the final partial step.
+                pouw_time += winner_time
+
+                # Keep the global simulation clock synchronized.
+                Node.simulation_time += winner_time
 
                 # Get the best TSP node found during the search.
                 winning_node = (
@@ -418,14 +503,22 @@ class MainFunctions:
                     .best_node
                 )
 
-                # Calculate the total number of TSP computations.
-                total_computations = sum(
+                # Calculate the total PoUW computational work.
+                pouw_computations = sum(
                     node.computations
                     for node in self.node_list
                 )
 
-                # Add proof-based validation if enabled.
+                # Validation starts with zero cost.
+                validation_computations = 0
+                validation_time = 0.0
+
+                # --------------------------------------------------
+                # Proof validation
+                # --------------------------------------------------
+
                 if self.validation_mode & PROOF_VALIDATION:
+
                     validators = [
                         node
                         for node in self.node_list
@@ -434,32 +527,30 @@ class MainFunctions:
 
                     (
                         proof_valid,
-                        validation_computations,
-                        validation_time
+                        proof_computations,
+                        proof_time
                     ) = proof_based_validation(
                         self.node_list[0].tsp,
-                        self.node_list[0]
-                        .tsp
-                        .best_path,
-                        self.node_list[0]
-                        .tsp
-                        .best_cost,
+                        self.node_list[0].tsp.best_path,
+                        self.node_list[0].tsp.best_cost,
                         Node.transcript,
                         validators
                     )
 
-                    # Add the validation work to the total.
-                    total_computations += (
-                        validation_computations
+                    validation_computations += (
+                        proof_computations
                     )
 
-                    # Add the validation time to the simulation time.
-                    Node.simulation_time += (
-                        validation_time
+                    validation_time += (
+                        proof_time
                     )
 
-                # Add council validation if enabled.
+                # --------------------------------------------------
+                # Council validation
+                # --------------------------------------------------
+
                 if self.validation_mode & COUNCIL_VALIDATION:
+
                     council = [
                         node
                         for node in self.node_list
@@ -467,38 +558,91 @@ class MainFunctions:
                     ]
 
                     (
-                        result,
-                        validation_computations,
-                        validation_time
+                        council_result,
+                        council_computations,
+                        council_time
                     ) = council_validation(
-                        self.node_list[0]
-                        .tsp,
+                        self.node_list[0].tsp,
                         council,
-                        self.node_list[0]
-                        .tsp
-                        .best_path,
-                        self.node_list[0]
-                        .tsp
-                        .best_cost
+                        self.node_list[0].tsp.best_path,
+                        self.node_list[0].tsp.best_cost
                     )
 
-                    # Add the validation work to the total.
-                    total_computations += (
-                        validation_computations
+                    validation_computations += (
+                        council_computations
                     )
 
-                    # Add the validation time to the simulation time.
-                    Node.simulation_time += (
-                        validation_time
+                    validation_time += (
+                        council_time
                     )
 
-                # Return the final PoUW simulation results.
+                # --------------------------------------------------
+                # Final totals
+                # --------------------------------------------------
+
+                # Total computational work consists of:
+                #
+                #     PoUW work + validation work
+                #
+                total_computations = (
+                    pouw_computations
+                    + validation_computations
+                )
+
+                # Total time consists of:
+                #
+                #     PoUW time + validation time
+                #
+                # PoUW time already includes transcript generation.
+                total_time = (
+                    pouw_time
+                    + validation_time
+                )
+
+                # Advance the global simulation clock by the
+                # validation time only.
+                Node.simulation_time += validation_time
+
+                # Return the final simulation results.
                 return {
+                    # -----------------------------
+                    # PoUW only
+                    # -----------------------------
+
+                    "pouw_computations":
+                        pouw_computations,
+
+                    "pouw_time":
+                        pouw_time,
+
+                    # -----------------------------
+                    # Validation only
+                    # -----------------------------
+
+                    "validation_computations":
+                        validation_computations,
+
+                    "validation_time":
+                        validation_time,
+
+                    # -----------------------------
+                    # PoUW + validation
+                    # -----------------------------
+
                     "total_computations":
                         total_computations,
 
+                    "total_time":
+                        total_time,
+
+                    # Keep simulation_time for compatibility
+                    # with existing code.
                     "simulation_time":
-                        Node.simulation_time,
+                        total_time,
+
+                    # -----------------------------
+                    # Winner
+                    # -----------------------------
 
                     "winner": {
                         "name":
@@ -520,6 +664,10 @@ class MainFunctions:
                             winning_node.visited
                     },
 
+                    # -----------------------------
+                    # Node information
+                    # -----------------------------
+
                     "nodes": {
                         node.name: {
                             "hash_rate":
@@ -535,25 +683,36 @@ class MainFunctions:
                     }
                 }
 
-            # The search has not finished, so one full second
-            # plus the transcript generation time has elapsed.
+            # ------------------------------------------------------
+            # Search has not finished.
+            # Advance the simulation by one full second plus
+            # the transcript generation time for this round.
+            # ------------------------------------------------------
+
             round_transcript_time = max(
                 result[1]
                 for result in results
             )
 
-            Node.simulation_time += (
-                1 + round_transcript_time
+            round_time = (
+                1
+                + round_transcript_time
             )
+
+            pouw_time += round_time
+
+            Node.simulation_time += round_time
 
     # Run all configured simulations and calculate their averages.
     def run_simulation(self):
 
-        # Store the results of every PoW simulation run.
+        # ---------------------------------------------------------
+        # PoW simulations
+        # ---------------------------------------------------------
+
         pow_results = []
 
-        # Run the PoW simulation the configured number of times.
-        for _ in range(self.runs):
+        for i in range(self.runs):
 
             # Reset the simulation before starting a new run.
             self.reset_simulation()
@@ -563,59 +722,24 @@ class MainFunctions:
                 self.block_hash_difficulty
             )
 
-            # Store the result of this run.
             pow_results.append(result)
 
-        # Store the results of every unvalidated PoUW run.
         pouw_results = []
 
-        # Save the validation mode selected by the user.
-        selected_validation_mode = self.validation_mode
-
-        # Temporarily disable validation so the baseline PoUW
-        # results measure only the cost of finding the solution.
-        self.validation_mode = NO_VALIDATION
-
-        # Run the unvalidated PoUW simulation the configured
-        # number of times.
-        for _ in range(self.runs):
+        for i in range(self.runs):
 
             # Reset the simulation before starting a new run.
             self.reset_simulation()
 
-            # Run the PoUW TSP simulation without validation.
+            # Run PoUW using the currently selected validation mode.
             result = self.multiple_node_pouw_tsp()
 
-            # Store the result of this run.
             pouw_results.append(result)
 
-        # Store the results of validated PoUW runs.
-        validated_pouw_results = []
+        # ---------------------------------------------------------
+        # Average PoW results
+        # ---------------------------------------------------------
 
-        # Only run validation when a validation method was selected.
-        if selected_validation_mode != NO_VALIDATION:
-
-            # Restore the selected validation mode.
-            self.validation_mode = selected_validation_mode
-
-            # Run the validated PoUW simulation the configured
-            # number of times.
-            for _ in range(self.runs):
-
-                # Reset the simulation before starting a new run.
-                self.reset_simulation()
-
-                # Run PoUW with the selected validation method.
-                result = self.multiple_node_pouw_tsp()
-
-                # Store the result of this run.
-                validated_pouw_results.append(result)
-
-        # Restore the original validation mode.
-        self.validation_mode = selected_validation_mode
-
-        # Calculate the average number of hashes across
-        # all PoW simulation runs.
         average_hashes = (
             sum(
                 result["total_hashes"]
@@ -624,17 +748,6 @@ class MainFunctions:
             / len(pow_results)
         )
 
-        # Calculate the average number of computations across
-        # all unvalidated PoUW simulation runs.
-        average_computations = (
-            sum(
-                result["total_computations"]
-                for result in pouw_results
-            )
-            / len(pouw_results)
-        )
-
-        # Calculate the average PoW simulation time.
         average_pow_simulation_time = (
             sum(
                 result["simulation_time"]
@@ -643,16 +756,66 @@ class MainFunctions:
             / len(pow_results)
         )
 
-        # Calculate the average unvalidated PoUW simulation time.
-        average_pouw_simulation_time = (
+        # ---------------------------------------------------------
+        # Average PoUW results
+        # ---------------------------------------------------------
+
+        average_computations = (
             sum(
-                result["simulation_time"]
+                result["pouw_computations"]
                 for result in pouw_results
             )
             / len(pouw_results)
         )
 
-        # Calculate the average hash rate of each PoW node.
+        average_pouw_simulation_time = (
+            sum(
+                result["pouw_time"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
+        # ---------------------------------------------------------
+        # Average PoUW validation results
+        # ---------------------------------------------------------
+
+        average_validation_computations = (
+            sum(
+                result["validation_computations"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
+        average_validation_time = (
+            sum(
+                result["validation_time"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
+        average_validated_pouw_computations = (
+            sum(
+                result["total_computations"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
+        average_validated_pouw_simulation_time = (
+            sum(
+                result["total_time"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
+        # ---------------------------------------------------------
+        # Average PoW node hash rate
+        # ---------------------------------------------------------
+
         average_pow_hash_rate = {}
 
         for node_name in pow_results[0]["nodes"]:
@@ -665,7 +828,10 @@ class MainFunctions:
                 / len(pow_results)
             )
 
-        # Calculate the average hash rate of each PoUW node.
+        # ---------------------------------------------------------
+        # Average PoUW node hash rate
+        # ---------------------------------------------------------
+
         average_pouw_hash_rate = {}
 
         for node_name in pouw_results[0]["nodes"]:
@@ -678,7 +844,10 @@ class MainFunctions:
                 / len(pouw_results)
             )
 
-        # Calculate the average TSP search rate of each PoUW node.
+        # ---------------------------------------------------------
+        # Average PoUW search rate
+        # ---------------------------------------------------------
+
         average_pouw_search_rate = {}
 
         for node_name in pouw_results[0]["nodes"]:
@@ -691,8 +860,10 @@ class MainFunctions:
                 / len(pouw_results)
             )
 
-        # Calculate the average number of hashes performed
-        # by each PoW node.
+        # ---------------------------------------------------------
+        # Average PoW mining count
+        # ---------------------------------------------------------
+
         average_pow_mining_count = {}
 
         for node_name in pow_results[0]["nodes"]:
@@ -705,8 +876,10 @@ class MainFunctions:
                 / len(pow_results)
             )
 
-        # Calculate the average number of TSP computations
-        # performed by each PoUW node.
+        # ---------------------------------------------------------
+        # Average PoUW computations per node
+        # ---------------------------------------------------------
+
         average_pouw_computations = {}
 
         for node_name in pouw_results[0]["nodes"]:
@@ -719,45 +892,50 @@ class MainFunctions:
                 / len(pouw_results)
             )
 
-        # Calculate averages for validated PoUW runs when available.
-        if validated_pouw_results:
+        # ---------------------------------------------------------
+        # Return all calculated averages and individual runs.
+        # ---------------------------------------------------------
 
-            # Calculate the average computational work,
-            # including the selected validation method.
-            average_validated_pouw_computations = (
-                sum(
-                    result["total_computations"]
-                    for result in validated_pouw_results
-                )
-                / len(validated_pouw_results)
-            )
-
-            # Calculate the average simulation time,
-            # including the selected validation method.
-            average_validated_pouw_simulation_time = (
-                sum(
-                    result["simulation_time"]
-                    for result in validated_pouw_results
-                )
-                / len(validated_pouw_results)
-            )
-
-        else:
-            # No validated runs were performed.
-            average_validated_pouw_computations = None
-            average_validated_pouw_simulation_time = None
-
-        # Return all calculated averages and individual run results.
         return {
-            "average_hashes": average_hashes,
-            "average_computations": average_computations,
+
+            # -----------------------------------------------------
+            # General averages
+            # -----------------------------------------------------
+
+            "average_hashes":
+                average_hashes,
+
+            "average_computations":
+                average_computations,
+
             "average_pow_simulation_time":
                 average_pow_simulation_time,
+
             "average_pouw_simulation_time":
                 average_pouw_simulation_time,
 
-            # PoW results.
+            # -----------------------------------------------------
+            # Validation averages
+            # -----------------------------------------------------
+
+            "average_validation_computations":
+                average_validation_computations,
+
+            "average_validation_time":
+                average_validation_time,
+
+            "average_validated_pouw_computations":
+                average_validated_pouw_computations,
+
+            "average_validated_pouw_simulation_time":
+                average_validated_pouw_simulation_time,
+
+            # -----------------------------------------------------
+            # PoW results
+            # -----------------------------------------------------
+
             "pow": {
+
                 "average_hash_rate":
                     average_pow_hash_rate,
 
@@ -768,8 +946,12 @@ class MainFunctions:
                     pow_results
             },
 
-            # PoUW results.
+            # -----------------------------------------------------
+            # PoUW results
+            # -----------------------------------------------------
+
             "pouw": {
+
                 "average_hash_rate":
                     average_pouw_hash_rate,
 
@@ -783,16 +965,26 @@ class MainFunctions:
                     pouw_results
             },
 
-            # Validated PoUW results.
+            # -----------------------------------------------------
+            # Validation results
+            # -----------------------------------------------------
+
             "validated_pouw": {
+
                 "average_computations":
                     average_validated_pouw_computations,
 
                 "average_simulation_time":
                     average_validated_pouw_simulation_time,
 
+                "average_validation_computations":
+                    average_validation_computations,
+
+                "average_validation_time":
+                    average_validation_time,
+
                 "runs":
-                    validated_pouw_results
+                    pouw_results
             }
         }
 
@@ -808,6 +1000,9 @@ class MainFunctions:
 
         # Reset the simulated time to zero.
         Node.simulation_time = 0
+
+        if self.validation_mode & PROOF_VALIDATION:
+            Node.transcript = None
 
         # Recreate the nodes and generate a new TSP problem.
         # Benchmarks are not run again here.

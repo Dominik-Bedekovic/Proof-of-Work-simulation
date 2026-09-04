@@ -5,7 +5,6 @@ from tspFunctions import TspFunction
 from transcript import Transcript
 import utils
 
-
 class Node:
 
     # BlockData is shared between all nodes because every node
@@ -119,10 +118,12 @@ class Node:
     def pouw_mining(self):
         # Process a batch of TSP search-tree nodes according to the
         # simulated search rate of this node.
+
+        transcript = (Node.transcript)
         temp_computation, work, transcript_time, finished = TspFunction.tsp_solver(
             self.tsp,
             self.search_rate,
-            Node.transcript,
+            transcript,
             Node.transcript_pouw_ratio
         )
 

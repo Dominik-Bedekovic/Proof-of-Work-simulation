@@ -2,6 +2,7 @@ from tspData import TspData
 from tspFunctions import TspFunction
 import multiprocessing
 import utils
+import time
 
 
 def council_validation(
@@ -427,6 +428,17 @@ def proof_based_validation(
     validators
 ):
 
+    #print("\n========== PROOF VALIDATION START ==========")
+    #print(f"Path: {path}")
+    #print(f"Proposed cost: {proposed_cost}")
+    #print(f"Validators: {len(validators) if validators else 0}")
+    #print(
+    #    f"Transcript steps: "
+    #    f"{len(transcript.steps) if transcript else 'None'}"
+    #)
+
+
+
     # A transcript is required because it contains the recorded
     # proof of how the proposed PoUW solution was generated.
     if transcript is None:
@@ -435,6 +447,21 @@ def proof_based_validation(
     # At least one validator is required to perform validation.
     if not validators:
         return False, 0, 0.0
+
+    #path = tuple(path)
+    #steps = tuple(transcript.steps)
+    #path_index = dict(transcript.path_index)
+
+    #print("\n--- Starting hash-chain validation ---")
+
+    #(
+    #    hash_valid,
+    #    hash_computations,
+    #    hash_time
+    #) = _parallel_hash_validation(
+    #    transcript,
+    #    validators
+    #)
 
     # =========================================================
     # 1. TRANSCRIPT HASH-CHAIN VALIDATION
@@ -452,10 +479,47 @@ def proof_based_validation(
         validators
     )
 
+    #print("--- Hash-chain validation finished ---")
+    #print(f"Hash valid: {hash_valid}")
+    #print(f"Hash computations: {hash_computations}")
+    #print(f"Hash validation time: {hash_time}")
+
+    #if not hash_valid:
+    #    print("[FAIL] Hash-chain validation failed")
+    #    print("========== PROOF VALIDATION END ==========\n")
+    #    return (
+    #        False,
+    #        hash_computations,
+    #        hash_time
+    #    )
+
     # If any part of the hash chain is invalid, the transcript
     # cannot be trusted and the proposed solution is rejected.
     if not hash_valid:
         return False, hash_computations, hash_time
+
+
+
+    #print("\n--- Starting path validation ---")
+
+    #(
+    #    path_valid,
+    #    path_computations,
+    #    path_time
+    #) = _parallel_path_validation(
+    #    tsp,
+    #    path,
+    #    proposed_cost,
+    #    transcript,
+    #    validators
+    #)
+
+    #print("--- Path validation finished ---")
+    #print(f"Path valid: {path_valid}")
+    #print(f"Path computations: {path_computations}")
+    #print(f"Path validation time: {path_time}")
+
+
 
     # =========================================================
     # 2. TSP PATH VALIDATION
@@ -464,6 +528,7 @@ def proof_based_validation(
     # The proposed path is divided between the validators.
     # Each validator checks its assigned edges against the TSP
     # matrix and the corresponding transcript entries.
+
     (
         path_valid,
         path_computations,
@@ -475,6 +540,16 @@ def proof_based_validation(
         transcript,
         validators
     )
+
+    #if not path_valid:
+    #    print("[FAIL] Path validation failed")
+    #    print("========== PROOF VALIDATION END ==========\n")
+
+    #    return (
+    #        False,
+    #        hash_computations + path_computations,
+    #        hash_time + path_time
+    #    )
 
     # If the proposed path is invalid, reject the solution.
     if not path_valid:
@@ -495,6 +570,11 @@ def proof_based_validation(
         + path_time
     )
 
+    #print("\n[SUCCESS] Proof validation passed")
+    #print(f"Total computations: {total_computations}")
+    #print(f"Total validation time: {total_time}")
+    #print("========== PROOF VALIDATION END ==========\n")
+
     return (
         True,
         total_computations,
@@ -507,15 +587,22 @@ def _parallel_hash_validation(
     validators
 ):
 
+    #print("\n[HASH] Entering _parallel_hash_validation")
+
     # A transcript is required for hash-chain validation.
     if transcript is None:
+        #print("[HASH FAIL] Transcript is None")
         return False, 0, 0.0
 
     steps = transcript.steps
     total_steps = len(steps)
 
+    #print(f"[HASH] Total transcript steps: {total_steps}")
+    #print(f"[HASH] Validators supplied: {len(validators)}")
+
     # An empty transcript cannot provide a valid proof.
     if total_steps == 0:
+        #print("[HASH FAIL] Transcript contains no steps")
         return False, 0, 0.0
 
     # There is no benefit in creating more validation tasks
@@ -527,11 +614,15 @@ def _parallel_hash_validation(
 
     num_validators = len(validators)
 
+    #print(f"[HASH] Validators used: {num_validators}")
+
     # Calculate the initial hash from the value from which
     # the transcript hash chain was originally constructed.
     initial_hash = utils.create_hash(
         transcript.sigma
     )
+
+    #print(f"[HASH] Initial hash: {initial_hash}")
 
     arguments = []
 
@@ -577,6 +668,12 @@ def _parallel_hash_validation(
                 start_index - 1
             ]["hash"]
 
+
+        #print(
+        #    f"[HASH] Validator {validator_index}: "
+        #    f"steps {start_index} to {end_index - 1}"
+        #)
+
         arguments.append(
             (
                 validator_index,
@@ -589,19 +686,53 @@ def _parallel_hash_validation(
 
         current_index = end_index
 
+    #print("[HASH] Starting multiprocessing workers")
+
     # ---------------------------------------------------------
     # Execute validation in parallel.
     # ---------------------------------------------------------
 
-    # One worker process is created for each validator.
-    with multiprocessing.Pool(
-        processes=num_validators
-    ) as pool:
+    #print("BEFORE HASH POOL", flush=True)
 
-        results = pool.map(
-            _hash_slice_worker,
-            arguments
+    # One worker process is created for each validator.
+    
+    with multiprocessing.Pool(
+            processes=num_validators
+        ) as pool:
+    
+            results = pool.map(
+                _hash_slice_worker,
+                arguments
+            )
+
+    """
+    pool = multiprocessing.Pool(
+        processes=num_validators
         )
+        try:
+            results = pool.map(
+                _hash_slice_worker,
+                arguments
+            )
+        finally:
+            pool.close()
+            pool.join()
+        
+    """
+    """
+        results = [
+        _hash_slice_worker(argument)
+        for argument in arguments
+    ]
+    """
+
+    
+    #print("AFTER HASH POOL", flush=True)
+
+    #print("[HASH] Worker results:")
+
+    #for result in results:
+        #print(f"    {result}")
 
     all_valid = True
     total_computations = 0
@@ -639,6 +770,15 @@ def _parallel_hash_validation(
             validator_time
         )
 
+        #print(
+        #    f"[HASH] Validator {validator_index}: "
+        #    f"valid={valid}, "
+        #    f"computations={computations}, "
+        #    f"failed_index={failed_index}, "
+        #    f"time={validator_time}"
+        #)
+
+
         # A single invalid transcript section is sufficient
         # to reject the entire proof.
         if not valid:
@@ -651,6 +791,12 @@ def _parallel_hash_validation(
         if validator_times
         else 0.0
     )
+
+    #print(
+    #    f"[HASH] Final: valid={all_valid}, "
+    #    f"computations={total_computations}, "
+    #    f"time={validation_time}"
+    #)
 
     return (
         all_valid,
@@ -668,6 +814,11 @@ def _hash_slice_worker(args):
         end_index,
         initial_hash
     ) = args
+
+    #print(
+    #    f"[HASH WORKER {validator_index}] "
+    #    f"Started: {start_index} -> {end_index - 1}"
+    #)
 
     # Start from the hash that precedes this validator's section.
     previous_hash = initial_hash
@@ -690,6 +841,16 @@ def _hash_slice_worker(args):
 
         expected_step_number = index + 1
 
+        #if step["step"] != expected_step_number:
+            #print(
+            #    f"[HASH WORKER {validator_index} FAIL] "
+            #    f"Step number mismatch at index {index}"
+            #)
+            #print(
+            #    f"Expected: {expected_step_number}, "
+            #    f"got: {step['step']}"
+            #)
+
         if step["step"] != expected_step_number:
             return (
                 validator_index,
@@ -704,6 +865,14 @@ def _hash_slice_worker(args):
 
         # The stored previous hash must match the hash generated
         # by the preceding transcript step.
+        #if step["previous_hash"] != previous_hash:
+            #print(
+        #        f"[HASH WORKER {validator_index} FAIL] "
+        #        f"Previous hash mismatch at index {index}"
+        #    )
+            #print(f"Expected: {previous_hash}")
+            #print(f"Stored:   {step['previous_hash']}")
+
         if step["previous_hash"] != previous_hash:
             return (
                 validator_index,
@@ -728,6 +897,15 @@ def _hash_slice_worker(args):
             hash_data
         )
 
+        #if step["hash"] != expected_hash:
+        #    #print(
+        #        f"[HASH WORKER {validator_index} FAIL] "
+        #        f"Current hash mismatch at index {index}"
+        #    )
+            #print(f"Expected: {expected_hash}")
+            #print(f"Stored:   {step['hash']}")
+            #print(f"Data:     {step['data']}")
+
         # The recalculated hash must match the stored hash.
         if step["hash"] != expected_hash:
             return (
@@ -740,6 +918,11 @@ def _hash_slice_worker(args):
         # The current hash becomes the previous hash for the
         # next transcript step in this validator's section.
         previous_hash = step["hash"]
+
+    #print(
+    #    f"[HASH WORKER {validator_index}] "
+    #    f"Passed {computations} checks"
+    #)
 
     # All assigned transcript steps passed validation.
     return (
@@ -758,20 +941,33 @@ def _parallel_path_validation(
     validators
 ):
 
+    #print("\n[PATH] Entering _parallel_path_validation")
+    #print(f"[PATH] Path: {path}")
+    #print(f"[PATH] Proposed cost: {proposed_cost}")
+
     # A path is required for validation.
-    if not path:
-        return False, 0, 0.0
+    #if not path:
+        #print("[PATH FAIL] Path is empty")
+    #    return False, 0, 0.0
 
     # A path containing fewer than two vertices has no edge to validate.
-    if len(path) < 2:
+    if not path:
+        #print("[PATH FAIL] Path is empty")
         return False, 0, 0.0
 
     # The transcript is required because the path must also be
     # compared against the recorded proof.
     if transcript is None:
+        #print("[PATH FAIL] Transcript is None")
         return False, 0, 0.0
 
     edge_count = len(path) - 1
+
+    #print(f"[PATH] Edge count: {edge_count}")
+    #print(
+    #    f"[PATH] Transcript path_index entries: "
+    #    f"{len(transcript.path_index)}"
+    #)
 
     # There is no reason to create more validators than there
     # are edges to validate.
@@ -781,6 +977,7 @@ def _parallel_path_validation(
     )]
 
     if not validators:
+        #print("[PATH FAIL] No validators")
         return False, 0, 0.0
 
     num_validators = len(validators)
@@ -815,6 +1012,11 @@ def _parallel_path_validation(
             start_index + slice_size
         )
 
+        #print(
+        #    f"[PATH] Validator {validator_index}: "
+        #    f"edges {start_index} to {end_index - 1}"
+        #)
+
         arguments.append(
             (
                 validator_index,
@@ -828,18 +1030,53 @@ def _parallel_path_validation(
 
         current_index = end_index
 
+    #print("[PATH] Starting multiprocessing workers")
+
     # =========================================================
     # Execute path validation in parallel.
     # =========================================================
 
+    #print("BEFORE PATH POOL", flush=True)
+    
     with multiprocessing.Pool(
-        processes=num_validators
-    ) as pool:
+            processes=num_validators
+        ) as pool:
+    
+            results = pool.map(
+                _path_slice_worker,
+                arguments
+            )
 
-        results = pool.map(
-            _path_slice_worker,
-            arguments
+    """
+    pool = multiprocessing.Pool(
+        processes=num_validators
         )
+    
+        try:
+            results = pool.map(
+                _path_slice_worker,
+                arguments
+            )
+        finally:
+            pool.close()
+            pool.join()
+    
+    """
+    """
+    results = [
+            _path_slice_worker(argument)
+            for argument in arguments
+        ]
+    """
+
+    
+    #print("AFTER PATH POOL", flush=True)
+
+    #print("[PATH] Worker results:")
+
+
+    #for result in results:
+        #print(f"    {result}")
 
     all_valid = True
     total_computations = 0
@@ -877,6 +1114,14 @@ def _parallel_path_validation(
             validator_time
         )
 
+        #print(
+        #    f"[PATH] Validator {validator_index}: "
+        #    f"valid={valid}, "
+        #    f"computations={computations}, "
+        #    f"partial_cost={calculated_cost}, "
+        #    f"error={error}"
+        #)
+
         # If one validator detects an invalid edge or transcript
         # entry, the proposed path is rejected.
         if not valid:
@@ -887,6 +1132,13 @@ def _parallel_path_validation(
         result[3]
         for result in results
     )
+
+    #print(f"[PATH] Calculated total cost: {calculated_cost}")
+    #print(f"[PATH] Proposed total cost:   {proposed_cost}")
+
+    #if calculated_cost != proposed_cost:
+        #print("[PATH FAIL] Total cost mismatch")
+    #    all_valid = False
 
     # The independently calculated total must match the cost
     # claimed by the PoUW miner.
@@ -900,6 +1152,12 @@ def _parallel_path_validation(
         if validator_times
         else 0.0
     )
+
+    #print(
+    #    f"[PATH] Final: valid={all_valid}, "
+    #    f"computations={total_computations}, "
+    #    f"time={validation_time}"
+    #)
 
     return (
         all_valid,
@@ -919,6 +1177,11 @@ def _path_slice_worker(args):
         end_index
     ) = args
 
+    #print(
+    #    f"[PATH WORKER {validator_index}] "
+    #    f"Started: edges {start_index} -> {end_index - 1}"
+    #)
+
     computations = 0
     calculated_cost = 0
 
@@ -934,6 +1197,11 @@ def _path_slice_worker(args):
         source = path[i]
         destination = path[i + 1]
 
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Checking edge {source} -> {destination}"
+        #)
+
         # =====================================================
         # Verify that the edge exists.
         # =====================================================
@@ -941,6 +1209,17 @@ def _path_slice_worker(args):
         expected_edge_cost = (
             tsp.matrix[source][destination]
         )
+
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Matrix cost = {expected_edge_cost}"
+        #)
+
+        #if expected_edge_cost == utils.inf:
+            #print(
+        #        f"[PATH WORKER {validator_index} FAIL] "
+        #        f"Edge does not exist"
+        #    )
 
         if expected_edge_cost == utils.inf:
             return (
@@ -969,9 +1248,29 @@ def _path_slice_worker(args):
             destination
         )
 
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Looking for key: {key}"
+        #)
+
         data = path_index.get(key)
 
         if data is None:
+
+            #print(
+            #    f"[PATH WORKER {validator_index} FAIL] "
+            #    f"Transcript key not found: {key}"
+            #)
+
+            #print(
+            #    f"[PATH WORKER {validator_index}] "
+            #    f"Available keys:"
+            #)
+
+
+            #for existing_key in path_index.keys():
+                #print(f"    {existing_key}")
+
             return (
                 validator_index,
                 False,
@@ -983,6 +1282,21 @@ def _path_slice_worker(args):
                     f"in transcript."
                 )
             )
+
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Transcript data: {data}"
+        #)
+
+        #if data["edge_cost"] != expected_edge_cost:
+            #print(
+            #    f"[PATH WORKER {validator_index} FAIL] "
+            #    f"Edge cost mismatch"
+            #)
+            #print(
+            #    f"Expected: {expected_edge_cost}, "
+            #    f"stored: {data['edge_cost']}"
+            #)
 
         # =====================================================
         # Verify the recorded edge cost.
@@ -1012,7 +1326,23 @@ def _path_slice_worker(args):
             path[:i + 2]
         )
 
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Expected child path: {expected_child_path}"
+        #)
+
+        #print(
+        #    f"[PATH WORKER {validator_index}] "
+        #    f"Stored child path:   {data['child_path']}"
+        #)
+
         if data["child_path"] != expected_child_path:
+
+            #print(
+            #    f"[PATH WORKER {validator_index} FAIL] "
+            #    f"Child path mismatch"
+            #)
+
             return (
                 validator_index,
                 False,
@@ -1023,6 +1353,11 @@ def _path_slice_worker(args):
                     f"{source} -> {destination}."
                 )
             )
+
+    #print(
+    #    f"[PATH WORKER {validator_index}] "
+    #    f"Passed. Partial cost = {calculated_cost}"
+    #)
 
     # Every assigned edge passed validation.
     return (

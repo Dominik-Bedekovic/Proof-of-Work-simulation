@@ -94,6 +94,7 @@ class MainFunctions:
 
         # Benchmark transcript generation when proof validation is enabled.
         if self.validation_mode & PROOF_VALIDATION:
+            print("INITIALIZING PROOF VALIDATION")
             MainFunctions.transcript_per_second = (
                 utils.average_runs(
                     benchmark.benchmark_transcript,

@@ -25,7 +25,7 @@ python main.py
 Dakle, za pokretanje simulacije potrebno je:
 
 1. Instalirati potrebne Python pakete iz `requirements.txt`.
-2. Po potrebi promijeniti parametre simulacije u `main.py`.
+2. Po potrebi promijeniti parametre simulacije.
 3. Pokrenuti `main.py`.
 
 ---
@@ -117,3 +117,13 @@ Odabrani način validacije utječe na ukupan broj računalnih operacija i vrijem
 Nakon odabira konfiguracijskih vrijednosti pritiskom na gumb **Run** pokreće se simulacija.
 
 GUI zatim prikazuje napredak izvođenja i nakon završetka otvara prozor s rezultatima.
+
+---
+
+## Evidencija vremena izvođenja (`timing.txt`)
+
+Datoteka `timing.txt` služi za evidenciju vremena izvođenja pojedinih pokretanja simulacije.
+
+Nakon svakog pokretanja programa u datoteku se zapisuje vremenski zapis izvršavanja simulacije. Novi rezultati dodaju se u postojeću datoteku, čime se omogućuje pregled vremena izvođenja kroz više uzastopnih pokretanja programa.
+
+Datoteka `timing.txt` može se koristiti za praćenje i usporedbu trajanja pojedinih pokretanja simulacije pri različitim konfiguracijskim parametrima.

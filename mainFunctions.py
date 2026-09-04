@@ -26,6 +26,7 @@ class MainFunctions:
         runs,
         block_hash_difficulty,
         validation_mode,
+        benchmark_progress_callback=None
     ):
         # Reset ratios shared between nodes.
         #Node.pouw_pow_ratio = 0
@@ -47,8 +48,9 @@ class MainFunctions:
             not MainFunctions.benchmarks_done
             or MainFunctions.benchmarked_validation_mode != self.validation_mode
         ):
-            
-            self.run_benchmarks()
+            self.run_benchmarks(
+                progress_callback=benchmark_progress_callback
+            )
 
         self.set_ratios()
         self.create_nodes()
@@ -89,17 +91,32 @@ class MainFunctions:
         # Create the nodes used in the simulation.
         self.create_nodes()
 
-        print(
-            "BENCHMARKS:",
-            MainFunctions.benchmarks_done,
-            "POUW RATIO:",
-            Node.pouw_pow_ratio,
-           "SEARCH RATES:",
-            [node.search_rate for node in self.node_list],
-            flush=True
-        )
+        #print(
+        #    "BENCHMARKS:",
+        #    MainFunctions.benchmarks_done,
+        #    "POUW RATIO:",
+        #    Node.pouw_pow_ratio,
+        #   "SEARCH RATES:",
+        #    [node.search_rate for node in self.node_list],
+        #    flush=True
+        #)
 
-    def run_benchmarks(self):
+    def run_benchmarks(self, progress_callback=None):
+
+        def benchmark_progress(step, total, message):
+            if progress_callback is not None:
+                progress_callback(step, total, message)
+
+        total_benchmarks = 2
+
+        if self.validation_mode & COUNCIL_VALIDATION:
+            total_benchmarks += 1
+
+        if self.validation_mode & PROOF_VALIDATION:
+            total_benchmarks += 3
+
+        completed_benchmarks = 0
+
         # Measure the average number of SHA-256 hashes
         # that can be calculated per second.
         MainFunctions.hashes_per_second = (
@@ -108,6 +125,8 @@ class MainFunctions:
                 self.runs
             )
         )
+
+        completed_benchmarks += 1        
 
         # Measure the average number of TSP search
         # computations that can be performed per second.
@@ -119,6 +138,8 @@ class MainFunctions:
                 self.runs
             )
         )
+
+        completed_benchmarks += 1
 
         # Calculate the computational ratio between PoUW and PoW.
         Node.pouw_pow_ratio = (
@@ -142,6 +163,8 @@ class MainFunctions:
                 / MainFunctions.hashes_per_second
             )
 
+            completed_benchmarks += 1
+
         # Benchmark transcript generation when proof validation is enabled.
         if self.validation_mode & PROOF_VALIDATION:
             #print("INITIALIZING PROOF VALIDATION")
@@ -157,6 +180,8 @@ class MainFunctions:
                 / MainFunctions.computations_per_second
             )
 
+            completed_benchmarks += 1
+
             # Benchmark validation of the TSP path.
             MainFunctions.path_validation_per_second = (
                 utils.average_runs(
@@ -166,6 +191,8 @@ class MainFunctions:
                     self.runs
                 )
             )
+
+            completed_benchmarks += 1
 
             Node.path_validation_pow_ratio = (
                 MainFunctions.path_validation_per_second
@@ -181,6 +208,8 @@ class MainFunctions:
                     self.runs
                 )
             )
+
+            completed_benchmarks += 1
 
             Node.hash_validation_pow_ratio = (
                 MainFunctions.hash_validation_per_second
@@ -703,8 +732,27 @@ class MainFunctions:
 
             Node.simulation_time += round_time
 
+
     # Run all configured simulations and calculate their averages.
-    def run_simulation(self):
+    def run_simulation(self, progress_callback=None):
+
+        # ---------------------------------------------------------
+        # Progress tracking
+        # ---------------------------------------------------------
+
+        total_runs = self.runs * 2
+        completed_runs = 0
+
+        def update_progress():
+            nonlocal completed_runs
+
+            completed_runs += 1
+
+            if progress_callback is not None:
+                progress_callback(
+                    completed_runs,
+                    total_runs
+                )
 
         # ---------------------------------------------------------
         # PoW simulations
@@ -724,6 +772,13 @@ class MainFunctions:
 
             pow_results.append(result)
 
+            # One simulation run has completed.
+            update_progress()
+
+        # ---------------------------------------------------------
+        # PoUW simulations
+        # ---------------------------------------------------------
+
         pouw_results = []
 
         for i in range(self.runs):
@@ -736,8 +791,11 @@ class MainFunctions:
 
             pouw_results.append(result)
 
+            # One simulation run has completed.
+            update_progress()
+
         # ---------------------------------------------------------
-        # Average PoW results
+        # Everything below this point is unchanged
         # ---------------------------------------------------------
 
         average_hashes = (
@@ -756,10 +814,6 @@ class MainFunctions:
             / len(pow_results)
         )
 
-        # ---------------------------------------------------------
-        # Average PoUW results
-        # ---------------------------------------------------------
-
         average_computations = (
             sum(
                 result["pouw_computations"]
@@ -775,10 +829,6 @@ class MainFunctions:
             )
             / len(pouw_results)
         )
-
-        # ---------------------------------------------------------
-        # Average PoUW validation results
-        # ---------------------------------------------------------
 
         average_validation_computations = (
             sum(
@@ -812,10 +862,6 @@ class MainFunctions:
             / len(pouw_results)
         )
 
-        # ---------------------------------------------------------
-        # Average PoW node hash rate
-        # ---------------------------------------------------------
-
         average_pow_hash_rate = {}
 
         for node_name in pow_results[0]["nodes"]:
@@ -827,10 +873,6 @@ class MainFunctions:
                 )
                 / len(pow_results)
             )
-
-        # ---------------------------------------------------------
-        # Average PoUW node hash rate
-        # ---------------------------------------------------------
 
         average_pouw_hash_rate = {}
 
@@ -844,10 +886,6 @@ class MainFunctions:
                 / len(pouw_results)
             )
 
-        # ---------------------------------------------------------
-        # Average PoUW search rate
-        # ---------------------------------------------------------
-
         average_pouw_search_rate = {}
 
         for node_name in pouw_results[0]["nodes"]:
@@ -859,10 +897,6 @@ class MainFunctions:
                 )
                 / len(pouw_results)
             )
-
-        # ---------------------------------------------------------
-        # Average PoW mining count
-        # ---------------------------------------------------------
 
         average_pow_mining_count = {}
 
@@ -876,10 +910,6 @@ class MainFunctions:
                 / len(pow_results)
             )
 
-        # ---------------------------------------------------------
-        # Average PoUW computations per node
-        # ---------------------------------------------------------
-
         average_pouw_computations = {}
 
         for node_name in pouw_results[0]["nodes"]:
@@ -892,15 +922,7 @@ class MainFunctions:
                 / len(pouw_results)
             )
 
-        # ---------------------------------------------------------
-        # Return all calculated averages and individual runs.
-        # ---------------------------------------------------------
-
         return {
-
-            # -----------------------------------------------------
-            # General averages
-            # -----------------------------------------------------
 
             "average_hashes":
                 average_hashes,
@@ -914,10 +936,6 @@ class MainFunctions:
             "average_pouw_simulation_time":
                 average_pouw_simulation_time,
 
-            # -----------------------------------------------------
-            # Validation averages
-            # -----------------------------------------------------
-
             "average_validation_computations":
                 average_validation_computations,
 
@@ -930,12 +948,7 @@ class MainFunctions:
             "average_validated_pouw_simulation_time":
                 average_validated_pouw_simulation_time,
 
-            # -----------------------------------------------------
-            # PoW results
-            # -----------------------------------------------------
-
             "pow": {
-
                 "average_hash_rate":
                     average_pow_hash_rate,
 
@@ -946,12 +959,7 @@ class MainFunctions:
                     pow_results
             },
 
-            # -----------------------------------------------------
-            # PoUW results
-            # -----------------------------------------------------
-
             "pouw": {
-
                 "average_hash_rate":
                     average_pouw_hash_rate,
 
@@ -965,12 +973,7 @@ class MainFunctions:
                     pouw_results
             },
 
-            # -----------------------------------------------------
-            # Validation results
-            # -----------------------------------------------------
-
             "validated_pouw": {
-
                 "average_computations":
                     average_validated_pouw_computations,
 
@@ -987,7 +990,7 @@ class MainFunctions:
                     pouw_results
             }
         }
-
+    
     # Reset the simulation state before starting a new run.
     def reset_simulation(self):
 

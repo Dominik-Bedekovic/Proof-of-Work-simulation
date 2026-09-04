@@ -212,20 +212,7 @@ def benchmark_path_validation(duration=1.0, size=11):
     tsp = TspData(size, True)
 
     # Use a known valid TSP path.
-    path = [
-        0,
-        8,
-        3,
-        6,
-        10,
-        2,
-        1,
-        5,
-        9,
-        7,
-        4,
-        0
-    ]
+    path = [0, 8, 3, 6, 10, 2, 1, 5, 9, 7, 4, 0]
 
     # Expected cost associated with the proposed path.
     proposed_cost = 330

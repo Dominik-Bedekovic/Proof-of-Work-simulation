@@ -57,12 +57,12 @@ def random_transactions():
 
     return tuple(transactions)
 
+# Executes the provided function multiple times and calculates
+# the arithmetic mean of the obtained results.
+# Used to reduce the influence of individual measurement variations
+# during benchmarking and simulation.
 def average_runs(function, runs):
 
-    # Executes the provided function multiple times and calculates
-    # the arithmetic mean of the obtained results.
-    # Used to reduce the influence of individual measurement variations
-    # during benchmarking and simulation.
     results = []
 
     for _ in range(runs):

@@ -64,7 +64,7 @@ class Node:
         self.search_rate = round(self.hash_rate * ratio)
 
         validation_ratio = getattr(Node, "validation_pow_ratio", 0)
-        self.validation_rate = round(self.hash_rate * validation_ratio)
+        self.validation_rate = self.hash_rate * validation_ratio
 
         # Calculate the corresponding transcript rate.
         transcript_ratio = getattr(

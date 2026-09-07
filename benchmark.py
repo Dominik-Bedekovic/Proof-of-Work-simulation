@@ -118,7 +118,7 @@ def benchmark_validation(duration=1.0, size=0):
     proposed_cost = 330
 
     # Number of branches successfully validated.
-    validations = 0
+    validation_computations = 0
 
     # Start measuring the benchmark duration.
     start = time.perf_counter()
@@ -130,14 +130,14 @@ def benchmark_validation(duration=1.0, size=0):
         # Validate each initial branch.
         for branch in branches:
 
-            TspFunction.validate_branch(
+            _, branch_computations = TspFunction.validate_branch(
                 benchmark_tsp,
                 branch,
                 proposed_cost
             )
 
             # One completed branch validation.
-            validations += 1
+            validation_computations += branch_computations
 
             # Stop immediately when the requested
             # benchmark duration has been reached.
@@ -149,7 +149,7 @@ def benchmark_validation(duration=1.0, size=0):
 
     # Calculate the number of branch validations
     # that can be performed per second.
-    validation_rate = validations / elapsed
+    validation_rate = validation_computations / elapsed
 
     return validation_rate
 

@@ -62,11 +62,37 @@ class Node:
         # measured ratio between PoW and PoUW computational rates.
         ratio = getattr(Node, "pouw_pow_ratio", 1)
         self.search_rate = self.hash_rate * ratio
-        self.search_credit = 0.0
-        self.previous_search_credit = 0.0
 
-        validation_ratio = getattr(Node, "validation_pow_ratio", 0)
-        self.validation_rate = self.hash_rate * validation_ratio
+        # ---------------------------------------------------------
+        # COUNCIL INITIAL VALIDATION RATE
+        # ---------------------------------------------------------
+
+        initial_validation_ratio = getattr(
+            Node,
+            "initial_validation_pow_ratio",
+            0.0
+        )
+
+        self.initial_validation_rate = (
+            self.hash_rate
+            * initial_validation_ratio
+        )
+
+
+        # ---------------------------------------------------------
+        # COUNCIL BRANCH VALIDATION RATE
+        # ---------------------------------------------------------
+
+        branch_validation_ratio = getattr(
+            Node,
+            "branch_validation_pow_ratio",
+            0.0
+        )
+
+        self.branch_validation_rate = (
+            self.hash_rate
+            * branch_validation_ratio
+        )
 
         # Calculate the corresponding transcript rate.
         transcript_ratio = getattr(

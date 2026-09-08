@@ -2,77 +2,116 @@ from tspData import TspData
 from tspFunctions import TspFunction
 import multiprocessing
 import utils
-import time
 
 
 def council_validation(
     tsp: TspData,
     council,
     proposed_path,
-    proposed_cost
+    proposed_cost,
+    initial_validations_per_second,
+    branch_validation_nodes_per_second
 ):
 
     # --------------------------------------------------------
     # INITIAL VALIDATION
     # --------------------------------------------------------
 
-    # Prepare the same validation arguments for every council
-    # member. Each tuple contains the TSP data, proposed path,
-    # and proposed cost.
     arguments = [
-        (tsp, proposed_path, proposed_cost)
+        (
+            tsp,
+            proposed_path,
+            proposed_cost
+        )
         for _ in council
     ]
 
-    # Create a multiprocessing pool so that every council
-    # member can independently validate the proposed solution
-    # in parallel.
     with multiprocessing.Pool() as pool:
 
-        # Execute _validate_node for every council member.
-        # The returned result for each member contains:
-        # (whether the solution is valid, number of computations)
         results = pool.map(
             _validate_node,
             arguments
         )
 
-    # Count the number of council members that initially
-    # considered the proposed solution valid.
-    initial_votes = sum(
-        valid
-        for valid, computations in results
-    )
+    # Each result is now simply True / False.
+    initial_votes = sum(results)
 
-    # Count all computations performed during the initial
-    # validation stage.
-    initial_computations = sum(
-        computations
-        for valid, computations in results
-    )
+    # Every council member performs exactly one complete
+    # proposed-tour validation.
+    initial_validations = len(council)
 
-    # Calculate the time required for the initial validation.
-    #
-    # Since the validators work in parallel, the stage finishes
-    # when the slowest validator finishes. Therefore, the
-    # maximum validation time is used.
+    if initial_validations == 0:
+        return {
+            "valid": False,
+            "initial_validations": 0,
+            "branch_validation_nodes": 0,
+            "initial_compute_work": 0.0,
+            "branch_compute_work": 0.0,
+            "compute_work": 0.0,
+            "validation_time": 0.0
+        }
+
+    # --------------------------------------------------------
+    # INITIAL VALIDATION SIMULATED TIME
+    # --------------------------------------------------------
+
+    # All council members perform the initial validation
+    # in parallel. Therefore the stage finishes when the
+    # slowest validator completes its one validation.
     initial_validation_time = max(
-        computations / node.validation_rate
-        for node, (_, computations)
-        in zip(council, results)
+        1.0 / node.initial_validation_rate
+        for node in council
+        if node.initial_validation_rate > 0
+    )
+
+    for index, node in enumerate(council):
+
+        if node.initial_validation_rate <= 0:
+            raise RuntimeError(
+                "Council initial validation rate must be positive."
+            )
+
+        print(
+            "INITIAL COUNCIL VALIDATOR",
+            index,
+            "| rate:",
+            node.initial_validation_rate,
+            "validations/s",
+            "| simulated time:",
+            1.0 / node.initial_validation_rate,
+            "s"
+        )
+
+    print(
+        "INITIAL COUNCIL TIME:",
+        initial_validation_time,
+        "s"
     )
 
     # --------------------------------------------------------
-    # ULTIMATE VALIDATION
+    # INITIAL VALIDATION REFERENCE COMPUTE WORK
     # --------------------------------------------------------
 
-    # Perform the more computationally expensive Branch and
-    # Bound validation. The search branches are distributed
-    # between the council members and processed in parallel.
+    # Unit:
+    #
+    # complete validations
+    # --------------------
+    # complete validations / second
+    #
+    # = reference-machine seconds
+    initial_compute_work = (
+        initial_validations
+        / initial_validations_per_second
+    )
+
+    # --------------------------------------------------------
+    # ULTIMATE / BRANCH VALIDATION
+    # --------------------------------------------------------
+
     (
         ultimate_votes,
         ultimate_voters,
-        ultimate_computations,
+        branch_validation_nodes,
         ultimate_validation_time
     ) = _parallel_branch_validation(
         tsp,
@@ -81,23 +120,36 @@ def council_validation(
     )
 
     # --------------------------------------------------------
-    # COMBINE VALIDATION RESULTS
+    # BRANCH VALIDATION REFERENCE COMPUTE WORK
     # --------------------------------------------------------
 
-    # The total number of council members participating in the
-    # initial validation.
-    total_votes = len(council)
-
-    # Combine the computational work from both validation stages.
-    total_computations = (
-        initial_computations
-        + ultimate_computations
+    # Unit:
+    #
+    # examined B&B validation nodes
+    # -----------------------------
+    # examined B&B validation nodes / second
+    #
+    # = reference-machine seconds
+    branch_compute_work = (
+        branch_validation_nodes
+        / branch_validation_nodes_per_second
     )
 
-    # Combine the elapsed time of both validation stages.
-    #
-    # The two stages are performed sequentially, so their times
-    # are added together.
+    # --------------------------------------------------------
+    # TOTAL COUNCIL COMPUTATIONAL WORK
+    # --------------------------------------------------------
+
+    council_compute_work = (
+        initial_compute_work
+        + branch_compute_work
+    )
+
+    # --------------------------------------------------------
+    # TOTAL SIMULATED VALIDATION TIME
+    # --------------------------------------------------------
+
+    # Initial validation and branch validation happen
+    # sequentially, so their stage times are added.
     total_validation_time = (
         initial_validation_time
         + ultimate_validation_time
@@ -107,8 +159,8 @@ def council_validation(
     # COUNCIL DECISION
     # --------------------------------------------------------
 
-    # Determine whether the validation results satisfy the
-    # council's voting rules.
+    total_votes = len(council)
+
     council_result = _council_voting(
         initial_votes,
         ultimate_votes,
@@ -116,13 +168,34 @@ def council_validation(
         ultimate_voters
     )
 
-    # Return the final decision together with the computational
-    # work and time required for validation.
-    return (
-        council_result,
-        total_computations,
-        total_validation_time
-    )
+    # --------------------------------------------------------
+    # RETURN
+    # --------------------------------------------------------
+
+    return {
+        "valid": council_result,
+
+        # Raw units
+        "initial_validations":
+            initial_validations,
+
+        "branch_validation_nodes":
+            branch_validation_nodes,
+
+        # Normalized reference-machine work
+        "initial_compute_work":
+            initial_compute_work,
+
+        "branch_compute_work":
+            branch_compute_work,
+
+        "compute_work":
+            council_compute_work,
+
+        # Simulated elapsed time
+        "validation_time":
+            total_validation_time
+    }
 
 
 def _validate_node(args):
@@ -130,40 +203,39 @@ def _validate_node(args):
     # Extract the validation arguments.
     tsp, proposed_path, proposed_cost = args
 
-    # Initialize the computation counter.
-    computations = 0
-
-    # Assume the proposed solution is valid until a validation
-    # condition fails.
+    # Assume the proposed solution is valid until
+    # one of the validation checks fails.
     valid = True
-
-    # Count the initial validation operation.
-    computations += 1
 
     # --------------------------------------------------------
     # PATH STRUCTURE VALIDATION
     # --------------------------------------------------------
 
+    # The path must exist.
+    if not proposed_path:
+        valid = False
+
+    # The path must contain every city exactly once,
+    # plus the repeated starting city at the end.
+    elif len(proposed_path) != tsp.size + 1:
+        valid = False
+
     # The tour must start and end at vertex 0.
-    if (
+    elif (
         proposed_path[0] != 0
         or proposed_path[-1] != 0
     ):
         valid = False
 
-    # The path must contain one additional vertex because
-    # the starting vertex 0 is repeated at the end.
-    elif len(proposed_path) != tsp.size + 1:
-        valid = False
-
+    # Every city index must be valid.
     elif any(
-    vertex < 0 or vertex >= tsp.size
-    for vertex in proposed_path[:-1]
+        vertex < 0 or vertex >= tsp.size
+        for vertex in proposed_path[:-1]
     ):
         valid = False
 
-    # Remove the final repeated starting vertex and check that
-    # the remaining vertices are all unique.
+    # Every city must appear exactly once before
+    # returning to the starting city.
     elif len(set(proposed_path[:-1])) != tsp.size:
         valid = False
 
@@ -173,41 +245,28 @@ def _validate_node(args):
 
     else:
 
-        # Initialize the calculated total path cost.
         total_cost = 0
 
-        # Visit every edge in the proposed path.
         for i in range(len(proposed_path) - 1):
 
-            # Get the source and destination vertices.
             source = proposed_path[i]
             destination = proposed_path[i + 1]
 
-            # Retrieve the cost of the corresponding edge.
             edge_cost = tsp.matrix[source][destination]
 
-            # Count the edge validation as a computation.
-            computations += 1
-
-            # If the edge does not exist, the proposed path
-            # is invalid.
+            # The proposed path cannot contain a missing edge.
             if edge_cost == utils.inf:
                 valid = False
                 break
 
-            # Add the edge cost to the calculated total.
             total_cost += edge_cost
 
-        # The calculated cost must match the cost claimed by
-        # the node that proposed the solution.
-        if total_cost != proposed_cost:
+        # The independently calculated path cost must
+        # match the claimed solution cost.
+        if valid and total_cost != proposed_cost:
             valid = False
 
-    # Return the validation result and computational work.
-    return (
-        valid,
-        computations
-    )
+    return valid
 
 
 def _parallel_branch_validation(
@@ -222,24 +281,20 @@ def _parallel_branch_validation(
     # later be waited on with join().
     processes = []
 
-    # Create a multiprocessing queue through which worker
-    # processes return their results to the main process.
+
+def _parallel_branch_validation(
+    tsp,
+    council,
+    proposed_cost
+):
+
+    branches = TspFunction.create_initial_branches(tsp)
+
+    processes = []
     result_queue = multiprocessing.Queue()
 
-    # Determine how many validators are available.
     num_validators = len(council)
 
-    # --------------------------------------------------------
-    # DIVIDE BRANCHES BETWEEN VALIDATORS
-    # --------------------------------------------------------
-
-    # Distribute the branches between validators.
-    #
-    # For example, with three validators:
-    #
-    # validator 1 -> branches 0, 3, 6, ...
-    # validator 2 -> branches 1, 4, 7, ...
-    # validator 3 -> branches 2, 5, 8, ...
     branch_slices = [
         branches[i::num_validators]
         for i in range(num_validators)
@@ -251,12 +306,11 @@ def _parallel_branch_validation(
 
     for node_index, branch_slice in enumerate(branch_slices):
 
-        # Create a separate process for this validator.
         process = multiprocessing.Process(
             target=_branch_worker,
             args=(
                 node_index,
-                council[node_index].validation_rate,
+                council[node_index].branch_validation_rate,
                 tsp,
                 branch_slice,
                 result_queue,
@@ -264,82 +318,97 @@ def _parallel_branch_validation(
             )
         )
 
-        # Store the process so it can later be joined.
         processes.append(process)
-
-        # Start the validator process.
         process.start()
 
     # --------------------------------------------------------
-    # WAIT FOR ALL VALIDATORS
+    # WAIT FOR VALIDATORS
     # --------------------------------------------------------
 
-    # Wait until every validator process has finished.
     for process in processes:
         process.join()
 
     # --------------------------------------------------------
-    # COLLECT VALIDATION RESULTS
+    # COLLECT RESULTS
     # --------------------------------------------------------
 
     results = []
 
-    # Retrieve every result placed into the queue by the
-    # validator processes.
     for _ in processes:
         results.append(
             result_queue.get()
         )
 
-    # Initialize the ultimate validation statistics.
     ultimate_votes = 0
     ultimate_voters = 0
+
+    # Raw number of B&B nodes examined during
+    # branch validation.
     ultimate_computations = 0
-    ultimate_validation_time = 0
+
+    ultimate_validation_time = 0.0
 
     # --------------------------------------------------------
-    # PROCESS VALIDATOR RESULTS
+    # PROCESS RESULTS
     # --------------------------------------------------------
 
     for (
         node_index,
         valid,
         computations,
-        validation_rate
+        branch_validation_rate
     ) in results:
 
-        # Add this validator's computations to the total.
         ultimate_computations += computations
 
-        # A validator that received no branches performed no
-        # validation work and therefore does not participate
-        # in the ultimate vote.
+        # A validator with no assigned B&B work does not vote.
         if computations == 0:
             continue
 
-        # Calculate the simulated time required by this
-        # validator based on its validation rate.
+        if branch_validation_rate <= 0:
+            raise RuntimeError(
+                "Council branch validation rate must be positive."
+            )
+
+        # B&B validation nodes
+        # --------------------
+        # B&B validation nodes / second
+        #
+        # = simulated seconds
         node_validation_time = (
-            computations / validation_rate
+            computations
+            / branch_validation_rate
         )
 
-        # Since validators work in parallel, the ultimate
-        # validation stage finishes when the slowest validator
-        # finishes.
+        print(
+            "COUNCIL VALIDATOR",
+            node_index,
+            "| B&B nodes:",
+            computations,
+            "| rate:",
+            branch_validation_rate,
+            "nodes/s",
+            "| simulated time:",
+            node_validation_time,
+            "s"
+        )
+
         ultimate_validation_time = max(
             ultimate_validation_time,
             node_validation_time
         )
 
-        # Count this validator as an active voter.
         ultimate_voters += 1
 
-        # If all assigned branches were valid, this validator
-        # casts a positive vote.
         if valid:
             ultimate_votes += 1
 
-    # Return the results of the ultimate validation stage.
+        print(
+            "ULTIMATE COUNCIL TIME:",
+            ultimate_validation_time,
+            "s"
+        )
+
     return (
         ultimate_votes,
         ultimate_voters,
@@ -347,20 +416,16 @@ def _parallel_branch_validation(
         ultimate_validation_time
     )
 
-
 def _branch_worker(
     node_index,
-    validation_rate,
+    branch_validation_rate,
     tsp,
     branches,
     result_queue,
     proposed_cost
 ):
 
-    # Assume all assigned branches are valid.
     valid = True
-
-    # Initialize the computation counter.
     computations = 0
 
     # --------------------------------------------------------
@@ -369,7 +434,6 @@ def _branch_worker(
 
     for branch in branches:
 
-        # Validate the current branch against the proposed cost.
         (
             branch_valid,
             branch_computations
@@ -379,26 +443,22 @@ def _branch_worker(
             proposed_cost
         )
 
-        # Add the branch's computational work to this
-        # validator's total.
+        # Raw number of B&B nodes examined.
         computations += branch_computations
 
-        # If any assigned branch is invalid, the validator
-        # rejects its assigned portion of the search space.
         if not branch_valid:
             valid = False
 
     # --------------------------------------------------------
-    # RETURN RESULT TO MAIN PROCESS
+    # RETURN RESULT
     # --------------------------------------------------------
 
-    # Send the validator's result back to the main process.
     result_queue.put(
         (
             node_index,
             valid,
             computations,
-            validation_rate
+            branch_validation_rate
         )
     )
 

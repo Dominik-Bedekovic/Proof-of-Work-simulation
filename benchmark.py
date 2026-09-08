@@ -82,60 +82,96 @@ def benchmark_tsp_pouw(duration=2.0, size=0):
 
     return total_computations / elapsed
 
-# =========================================================
-# PoUW branch validation benchmark
-# =========================================================
+def benchmark_initial_validation(duration=2.0, size=0):
 
-def benchmark_validation(duration=1.0, size=0):
+    # Obtain a genuine valid solution.
+    solved_tsp = TspData(size, True)
 
-    # Create one fixed TSP instance.
+    TspFunction.tsp_solver(
+        solved_tsp
+    )
+
+    proposed_path = solved_tsp.best_path
+    proposed_cost = solved_tsp.best_cost
+
     benchmark_tsp = TspData(size, True)
 
-    # Generate the initial branches that are used
-    # by the council during branch validation.
+    validations = 0
+    start = time.perf_counter()
+
+    while time.perf_counter() - start < duration:
+
+        valid = validation._validate_node(
+            (
+                benchmark_tsp,
+                proposed_path,
+                proposed_cost
+            )
+        )
+
+        if not valid:
+            raise RuntimeError(
+                "Benchmark initial validation failed."
+            )
+
+        validations += 1
+
+    elapsed = time.perf_counter() - start
+
+    return validations / elapsed
+
+def benchmark_branch_validation(duration=2.0, size=0):
+
+    # Solve deterministic benchmark instance once
+    # to obtain a genuine proposed optimum.
+    solved_tsp = TspData(size, True)
+
+    TspFunction.tsp_solver(
+        solved_tsp
+    )
+
+    proposed_cost = solved_tsp.best_cost
+
+    # Fresh equivalent deterministic instance.
+    benchmark_tsp = TspData(size, True)
+
     branches = TspFunction.create_initial_branches(
         benchmark_tsp
     )
 
-    # Use a fixed proposed cost for every validation.
-    proposed_cost = 330
-
-    # Number of branches successfully validated.
-    validations = 0
-
-    # Start measuring the benchmark duration.
+    total_computations = 0
     start = time.perf_counter()
 
-    # Continue validating branches until the
-    # requested benchmark duration has passed.
+    branch_index = 0
+
     while time.perf_counter() - start < duration:
 
-        # Validate each initial branch.
-        for branch in branches:
+        branch = branches[branch_index]
 
+        valid, computations = (
             TspFunction.validate_branch(
                 benchmark_tsp,
                 branch,
                 proposed_cost
             )
+        )
 
-            # One completed branch validation.
-            validations += 1
+        if not valid:
+            raise RuntimeError(
+                "Benchmark branch validation failed."
+            )
 
-            # Stop immediately when the requested
-            # benchmark duration has been reached.
-            if time.perf_counter() - start >= duration:
-                break
+        total_computations += computations
 
-    # Measure the actual elapsed benchmark time.
+        branch_index = (
+            branch_index + 1
+        ) % len(branches)
+
     elapsed = time.perf_counter() - start
 
-    # Calculate the number of branch validations
-    # that can be performed per second.
-    validation_rate = validations / elapsed
-
-    return validation_rate
-
+    return (
+        total_computations / elapsed
+    )
 
 # =========================================================
 # PoUW transcript benchmark
@@ -208,6 +244,8 @@ def benchmark_hash_validation(
     duration=1.0,
     steps=1000
 ):
+
+    from validation import _hash_slice_worker
 
     root_data = {
         "path": [0],

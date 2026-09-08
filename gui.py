@@ -1458,19 +1458,14 @@ def show_node_details(data):
 def show_comparison_graph(data):
 
     # --------------------------------------------------------
-
     # Remove previous graphs
-
     # --------------------------------------------------------
 
     for widget in comparison_frame.winfo_children():
-
         widget.destroy()
 
     # --------------------------------------------------------
-
-    # Baseline PoW and PoUW
-
+    # Read normalized computational-work values
     # --------------------------------------------------------
 
     average_pow_compute_work = (
@@ -1481,108 +1476,165 @@ def show_comparison_graph(data):
         data["average_pouw_compute_work"]
     )
 
-
-    # --------------------------------------------------------
-
-    # Graph 1: PoW vs PoUW
-
-    # --------------------------------------------------------
-
-    create_comparison_graph(
-
-        comparison_frame,
-
-        "PoW vs PoUW",
-
-        [
-
-            "PoW",
-
-            "PoUW"
-
-        ],
-
-        [
-
-            average_pow_compute_work,
-            average_pouw_compute_work
-
-        ],
-
-        "Computational Work"
-
+    average_validated_pouw_compute_work = (
+        data["average_validated_pouw_compute_work"]
     )
 
-    create_comparison_graph(
-            
-        comparison_frame,
+    # --------------------------------------------------------
+    # Read simulated completion-time values
+    # --------------------------------------------------------
 
-        "PoW vs PoUW - Completion Time",
+    average_pow_simulation_time = (
+        data["average_pow_simulation_time"]
+    )
+
+    average_pouw_simulation_time = (
+        data["average_pouw_simulation_time"]
+    )
+
+    average_validated_pouw_simulation_time = (
+        data["average_validated_pouw_simulation_time"]
+    )
+
+    # --------------------------------------------------------
+    # Determine validation mode
+    # --------------------------------------------------------
+
+    selected_validation = validation.get()
+
+    if selected_validation == "proof":
+
+        validation_name = (
+            "PoUW + Proof Validation"
+        )
+
+    elif selected_validation == "council":
+
+        validation_name = (
+            "PoUW + Council Validation"
+        )
+
+    else:
+
+        validation_name = "PoUW"
+
+    # ========================================================
+    # GRAPH 1
+    # PoW vs PoUW / Validated PoUW
+    # Reference computational work
+    # ========================================================
+
+    # If validation is enabled, compare PoW against the
+    # complete validated PoUW mechanism rather than against
+    # the unvalidated baseline.
+    if selected_validation == "none":
+
+        main_pouw_work = (
+            average_pouw_compute_work
+        )
+
+        main_pouw_name = "PoUW"
+
+    else:
+
+        main_pouw_work = (
+            average_validated_pouw_compute_work
+        )
+
+        main_pouw_name = validation_name
+
+    create_comparison_graph(
+        comparison_frame,
+        "PoW vs PoUW - Reference Compute Work",
         [
             "PoW",
-            "PoUW"
+            main_pouw_name
         ],
         [
-            data["average_pow_simulation_time"],
-            data["average_pouw_simulation_time"]
+            average_pow_compute_work,
+            main_pouw_work
+        ],
+        "Reference Compute Work [s]"
+    )
+
+    # ========================================================
+    # GRAPH 2
+    # PoW vs PoUW / Validated PoUW
+    # Simulated completion time
+    # ========================================================
+
+    if selected_validation == "none":
+
+        main_pouw_time = (
+            average_pouw_simulation_time
+        )
+
+    else:
+
+        main_pouw_time = (
+            average_validated_pouw_simulation_time
+        )
+
+    create_comparison_graph(
+        comparison_frame,
+        "PoW vs PoUW - Simulated Completion Time",
+        [
+            "PoW",
+            main_pouw_name
+        ],
+        [
+            average_pow_simulation_time,
+            main_pouw_time
         ],
         "Simulation Time [s]"
     )
 
     # --------------------------------------------------------
-
-    # Graph 2: PoUW vs PoUW + Validation
-
+    # No validation selected:
+    # only the two main PoW vs PoUW graphs are needed.
     # --------------------------------------------------------
 
-    selected_validation = validation.get()
-
     if selected_validation == "none":
-
         return
 
-    validated_computations = (
-
-        data["validated_pouw"]["average_computations"]
-
-    )
-
-    if selected_validation == "proof":
-
-        validation_name = "PoUW + Proof Validation"
-
-    elif selected_validation == "council":
-
-        validation_name = "PoUW + Council Validation"
-
-    else:
-
-        return
+    # ========================================================
+    # GRAPH 3
+    # Base PoUW vs PoUW + Validation
+    # Reference computational work
+    # ========================================================
 
     create_comparison_graph(
-
         comparison_frame,
-
-        "PoUW Validation Comparison",
-
+        "PoUW Validation Overhead - Reference Compute Work",
         [
-
             "PoUW",
-
             validation_name
-
         ],
-
         [
-
-            average_computations,
-
-            validated_computations
-
+            average_pouw_compute_work,
+            average_validated_pouw_compute_work
         ],
+        "Reference Compute Work [s]"
+    )
 
-        "Computational Work"
+    # ========================================================
+    # GRAPH 4
+    # Base PoUW vs PoUW + Validation
+    # Simulated completion time
+    # ========================================================
 
+    create_comparison_graph(
+        comparison_frame,
+        "PoUW Validation Overhead - Simulated Completion Time",
+        [
+            "PoUW",
+            validation_name
+        ],
+        [
+            average_pouw_simulation_time,
+            average_validated_pouw_simulation_time
+        ],
+        "Simulation Time [s]"
     )
 
 

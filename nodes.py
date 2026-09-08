@@ -26,8 +26,8 @@ class Node:
         # Generate the shared TSP problem used during the PoUW simulation.
         cls.tsp = TspData(num_of_nodes)
     @classmethod
-    def initialize_transcript(cls):
-        cls.transcript = Transcript()
+    def initialize_transcript(cls, root_data, root_hash):
+        cls.transcript = Transcript(root_data, root_hash)
 
     def __init__(self, name):
         # Identifier used to distinguish individual nodes.
@@ -73,17 +73,7 @@ class Node:
             0
         )
         self.transcript_rate = round(
-            self.hash_rate * transcript_ratio
-        )
-
-        # Calculate the corresponding path validation rate.
-        path_validation_ratio = getattr(
-            Node,
-            "path_validation_pow_ratio",
-            0
-        )
-        self.path_validation_rate = round(
-            self.hash_rate * path_validation_ratio
+            self.search_rate * transcript_ratio
         )
 
         # Calculate the corresponding hash validation rate.
@@ -96,6 +86,17 @@ class Node:
             self.hash_rate * hash_validation_ratio
         )
 
+        # Calculate the corresponding B&B proof-validation rate.
+        bnb_validation_ratio = getattr(
+            Node,
+            "bnb_validation_pow_ratio",
+            0
+        )
+
+        self.bnb_validation_rate = (
+            self.hash_rate
+            * bnb_validation_ratio
+        )
 
 
         # Total number of TSP search-node computations performed

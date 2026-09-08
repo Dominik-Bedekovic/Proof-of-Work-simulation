@@ -4,3 +4,6 @@ run_settings total: 4.731s
 run_settings total: 4.862s
 run_settings total: 4.753s
 run_settings total: 4.624s
+run_settings total: 15.806s
+run_settings total: 18.757s
+run_settings total: 18.839s

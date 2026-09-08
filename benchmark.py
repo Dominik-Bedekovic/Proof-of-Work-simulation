@@ -160,21 +160,32 @@ def benchmark_validation(duration=1.0, size=0):
 
 def benchmark_transcript(duration=1.0):
 
-    # Create a transcript that will be used to benchmark
-    # the creation of transcript steps.
-    transcript = Transcript()
+    root_data = {
+        "path": [0],
+        "vertex": 0,
+        "visited": 0,
+        "lower_bound": 0,
+        "children": []
+    }
 
-    # Number of transcript steps created.
+    root_hash = utils.create_hash(
+        str(root_data)
+    )
+
+    transcript = Transcript(
+        root_data,
+        root_hash
+    )
+
     computations = 0
 
-    # Start measuring the benchmark duration.
     start = time.perf_counter()
 
-    # Continue creating transcript steps until
-    # the requested duration has passed.
-    while time.perf_counter() - start < duration:
+    while (
+        time.perf_counter() - start
+        < duration
+    ):
 
-        # Create one representative transcript step.
         data = Transcript.create_step_data(
             parent_path=[0, 1, 2, 3],
             parent_vertex=3,
@@ -184,110 +195,57 @@ def benchmark_transcript(duration=1.0):
             edge_cost=70,
             reduction_cost=30,
             child_lower_bound=600,
+            incumbent_cost=1000,
             pruned=False
         )
 
-        # Add the generated step to the transcript.
         transcript.add_step(data)
 
-        # Count the completed transcript operation.
         computations += 1
 
-    # Measure the actual elapsed benchmark time.
-    elapsed = time.perf_counter() - start
+    elapsed = (
+        time.perf_counter()
+        - start
+    )
 
-    # Calculate the transcript-step creation rate.
-    computation_rate = computations / elapsed
+    if elapsed <= 0:
+        return 0.0
+
+    computation_rate = (
+        computations / elapsed
+    )
 
     return computation_rate
-
-
-# =========================================================
-# PoUW path validation benchmark
-# =========================================================
-
-def benchmark_path_validation(duration=1.0, size=11):
-
-    # Create the TSP instance used for the benchmark.
-    tsp = TspData(size, True)
-
-    # Use a known valid TSP path.
-    path = [0, 8, 3, 6, 10, 2, 1, 5, 9, 7, 4, 0]
-
-    # Expected cost associated with the proposed path.
-    proposed_cost = 330
-
-    # Create a transcript containing the steps
-    # corresponding to the proposed path.
-    transcript = Transcript()
-
-    for i in range(len(path) - 1):
-
-        # Get the source and destination vertices
-        # for the current path edge.
-        source = path[i]
-        destination = path[i + 1]
-
-        # Create a transcript step representing
-        # this path transition.
-        data = Transcript.create_step_data(
-            parent_path=path[:i + 1],
-            parent_vertex=source,
-            parent_lower_bound=0,
-            selected_neighbour=destination,
-            child_path=path[:i + 2],
-            edge_cost=tsp.matrix[source][destination],
-            reduction_cost=0,
-            child_lower_bound=0,
-            pruned=False
-        )
-
-        # Add the step to the transcript.
-        transcript.add_step(data)
-
-    # Number of complete path validations performed.
-    computations = 0
-
-    # Start measuring the benchmark duration.
-    start = time.perf_counter()
-
-    # Repeatedly validate the complete path until
-    # the requested benchmark duration has passed.
-    while time.perf_counter() - start < duration:
-
-        validation._validate_calculated_path(
-            tsp,
-            path,
-            proposed_cost,
-            transcript
-        )
-
-        # One complete path validation was performed.
-        computations += 1
-
-    # Measure the actual elapsed benchmark time.
-    elapsed = time.perf_counter() - start
-
-    # Calculate the number of complete path
-    # validations that can be performed per second.
-    validation_rate = computations / elapsed
-
-    return validation_rate
-
 
 # =========================================================
 # PoUW hash-chain validation benchmark
 # =========================================================
 
-def benchmark_hash_validation(duration=1.0, steps=1000):
+def benchmark_hash_validation(
+    duration=1.0,
+    steps=1000
+):
 
-    # Create a transcript containing a fixed number
-    # of valid transcript steps.
-    transcript = Transcript()
+    root_data = {
+        "path": [0],
+        "vertex": 0,
+        "visited": 0,
+        "lower_bound": 0,
+        "children": []
+    }
 
+    root_hash = utils.create_hash(
+        str(root_data)
+    )
+
+    transcript = Transcript(
+        root_data,
+        root_hash
+    )
+
+    # Generate a valid transcript hash chain.
     for _ in range(steps):
 
-        # Create one representative transcript step.
         data = Transcript.create_step_data(
             parent_path=[0, 1, 2, 3],
             parent_vertex=3,
@@ -297,52 +255,153 @@ def benchmark_hash_validation(duration=1.0, steps=1000):
             edge_cost=70,
             reduction_cost=30,
             child_lower_bound=600,
+            incumbent_cost=1000,
             pruned=False
         )
 
-        # Add the step to the transcript.
         transcript.add_step(data)
 
-    # Create the arguments expected by the hash-slice
-    # validation worker.
     arguments = (
         0,
         transcript.steps,
         0,
-        steps,
-        utils.create_hash(transcript.sigma)
+        len(transcript.steps),
+        root_hash
     )
 
-    # Total number of transcript steps successfully checked.
     computations = 0
 
-    # Start measuring the benchmark duration.
     start = time.perf_counter()
 
-    # Repeatedly validate the entire transcript hash chain
-    # until the requested benchmark duration has passed.
-    while time.perf_counter() - start < duration:
+    while (
+        time.perf_counter() - start
+        < duration
+    ):
 
         (
             _,
             valid,
             steps_checked,
             _
-        ) = validation._hash_slice_worker(arguments)
+        ) = validation._hash_slice_worker(
+            arguments
+        )
 
-        # Stop the benchmark if the generated transcript
-        # unexpectedly fails hash validation.
         if not valid:
-            break
+            raise RuntimeError(
+                "Hash validation benchmark generated "
+                "an invalid transcript."
+            )
 
-        # Add the number of successfully checked steps.
         computations += steps_checked
 
-    # Measure the actual elapsed benchmark time.
-    elapsed = time.perf_counter() - start
+    elapsed = (
+        time.perf_counter()
+        - start
+    )
 
-    # Calculate the number of transcript hash-chain
-    # validation steps that can be checked per second.
-    validation_rate = computations / elapsed
+    if elapsed <= 0:
+        return 0.0
+
+    validation_rate = (
+        computations / elapsed
+    )
 
     return validation_rate
+
+def benchmark_bnb_validation(duration=1.0):
+
+    # Create a fixed TSP instance for benchmarking.
+    tsp = TspData(
+        11,
+        benchmark=True
+    )
+
+    root = tsp.tsp_root
+
+    # Find one legal neighbour of the root.
+    neighbour = None
+
+    for candidate in range(root.size):
+
+        if (
+            root.matrix[
+                root.vertex
+            ][candidate] == utils.inf
+        ):
+            continue
+
+        if candidate in root.path:
+            continue
+
+        neighbour = candidate
+        break
+
+    if neighbour is None:
+        raise RuntimeError(
+            "B&B validation benchmark could not "
+            "find a valid child."
+        )
+
+    computations = 0
+
+    start = time.perf_counter()
+
+    while (
+        time.perf_counter() - start
+        < duration
+    ):
+
+        # Reconstruct the child exactly as the proof
+        # validator does.
+        child = TspFunction._create_child(
+            root,
+            tsp.matrix,
+            root.vertex,
+            neighbour
+        )
+
+        # Read the original edge cost.
+        edge_cost = tsp.matrix[
+            root.vertex
+        ][neighbour]
+
+        # Read the reduced edge cost.
+        reduced_edge_cost = root.matrix[
+            root.vertex
+        ][neighbour]
+
+        # Recalculate the reduction component.
+        reduction_cost = (
+            child.cost
+            - root.cost
+            - reduced_edge_cost
+        )
+
+        # Perform representative validation comparisons.
+        valid = (
+            child.path
+            == root.path + [neighbour]
+            and edge_cost != utils.inf
+            and reduction_cost >= 0
+        )
+
+        if not valid:
+            raise RuntimeError(
+                "B&B validation benchmark "
+                "generated an invalid child."
+            )
+
+        computations += 1
+
+    elapsed = (
+        time.perf_counter()
+        - start
+    )
+
+    if elapsed <= 0:
+        return 0.0
+
+    return (
+        computations / elapsed
+    )

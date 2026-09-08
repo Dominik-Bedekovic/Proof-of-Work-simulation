@@ -133,6 +133,10 @@ class TspFunction():
 
         child.path = parent.path + [destination_city]
 
+        child.visited = parent.visited + 1
+
+        child.vertex = destination_city
+
         # Disable all outgoing connections from the starting city.
         for column in range(child.size):
             child.matrix[starting_city][column] = utils.inf
@@ -327,6 +331,7 @@ class TspFunction():
         transcript=None,
         transcript_ratio=0
     ):
+
         # Priority queue containing all search-tree nodes
         # that have not yet been processed.
         priority_queue = tsp.priority_queue
@@ -340,7 +345,8 @@ class TspFunction():
         # Simulated computational work performed during the search.
         work = 0.0
 
-        # Simulated time required for the search and transcript generation.
+        # Simulated time required for the search and
+        # transcript generation.
         time = 0.0
 
         # Process only a limited number of search nodes.
@@ -348,86 +354,129 @@ class TspFunction():
         for _ in range(search_rate):
 
             # If no nodes remain, the complete search space has
-            # been explored and the optimal solution has been found.
+            # been explored.
             if not priority_queue:
                 return computations, work, time, True
 
-            # Select the unexplored node with the smallest lower bound.
-            current_node: TspNode = heapq.heappop(priority_queue)
+            # Select the unexplored node with the smallest
+            # lower bound.
+            current_node: TspNode = heapq.heappop(
+                priority_queue
+            )
+
             computations += 1
             work += 1.0
 
-            # If the lower bound is already greater than or equal to
-            # the best complete solution found so far, this branch
-            # cannot produce a better solution and is therefore pruned.
+            # =====================================================
+            # POP-TIME PRUNING
+            # =====================================================
+
+            # If the lower bound is already greater than or equal
+            # to the best complete solution found so far, this
+            # branch cannot improve the incumbent solution.
             if current_node.cost >= tsp.best_cost:
+
+                if transcript is not None:
+
+                    data = transcript.create_prune_data(
+                        path=current_node.path,
+                        vertex=current_node.vertex,
+                        lower_bound=current_node.cost,
+                        incumbent_cost=tsp.best_cost
+                    )
+
+                    transcript.add_step(data)
+
+                    # Account for transcript-generation work.
+                    if transcript_ratio > 0:
+                        work += 1 / transcript_ratio
+                        time += 1 / transcript_ratio
+
                 continue
 
-            # Check whether the current path has visited every city.
+            # =====================================================
+            # COMPLETE TOUR
+            # =====================================================
+
+            # If every city has already been visited, only the
+            # return edge to city 0 remains.
             if current_node.visited == levels - 1:
 
-                # Add the edge returning from the final city to city 0.
-                final_edge = tsp.matrix[current_node.vertex][0]
+                final_edge = tsp.matrix[
+                    current_node.vertex
+                ][0]
 
-                # Ignore the path if no return edge exists.
+                # No valid Hamiltonian cycle exists through this
+                # node if the return edge is unavailable.
                 if final_edge == utils.inf:
                     continue
 
-                # Calculate the total cost of the complete tour.
                 total_cost = (
                     current_node.total_cost
                     + final_edge
                 )
 
-                # Record the completed path in the transcript.
+                # Important:
+                # save the incumbent BEFORE potentially updating it.
+                # This is the value that existed when this complete
+                # tour was discovered.
+                incumbent_cost = tsp.best_cost
+
+                # Record the completed tour separately from a
+                # normal B&B branch expansion.
                 if transcript is not None:
-                    data = transcript.create_step_data(
+
+                    data = transcript.create_complete_data(
                         parent_path=current_node.path,
                         parent_vertex=current_node.vertex,
                         parent_lower_bound=current_node.cost,
-                        selected_neighbour=0,
                         child_path=current_node.path + [0],
                         edge_cost=final_edge,
-                        reduction_cost=None,
-                        child_lower_bound=None,
-                        pruned=False
+                        incumbent_cost=incumbent_cost
                     )
 
                     transcript.add_step(data)
 
-                    # Account for the additional computational work
-                    # required to generate the transcript entry.
                     if transcript_ratio > 0:
                         work += 1 / transcript_ratio
                         time += 1 / transcript_ratio
 
-                # Update the best known solution if this tour is better.
+                # Update the incumbent if this completed tour
+                # is better than the previous best solution.
                 if total_cost < tsp.best_cost:
+
                     tsp.best_cost = total_cost
-                    tsp.best_path = current_node.path + [0]
+                    tsp.best_path = (
+                        current_node.path + [0]
+                    )
                     tsp.best_node = current_node
 
                 continue
 
-            # Generate a child node for every unvisited neighbouring city.
-            for neighbour_node in range(current_node.size):
+            # =====================================================
+            # NORMAL B&B EXPANSION
+            # =====================================================
 
-                # Ignore neighbours that cannot be reached from
-                # the current city.
+            # Generate one child for every legal unvisited city.
+            for neighbour_node in range(
+                current_node.size
+            ):
+
+                # Ignore edges that are unavailable in the
+                # reduced matrix.
                 if (
                     current_node.matrix[
                         current_node.vertex
-                    ][neighbour_node] == utils.inf
+                    ][neighbour_node]
+                    == utils.inf
                 ):
                     continue
 
-                # A city already contained in the current path
-                # must not be visited again.
+                # Already visited cities cannot be selected again.
                 if neighbour_node in current_node.path:
                     continue
 
-                # Create a new branch by extending the current path
-                # with the selected neighbouring city.
+                # Independently create the B&B child.
                 child = TspFunction._create_child(
                     current_node,
                     tsp.matrix,
@@ -435,18 +484,41 @@ class TspFunction():
                     neighbour_node
                 )
 
-                # Record the branch expansion in the transcript.
+                # Save the incumbent that existed when this child
+                # was generated.
+                incumbent_cost = tsp.best_cost
+
+                # Determine whether this child is immediately
+                # pruned by the current incumbent.
+                pruned = (
+                    child.cost >= incumbent_cost
+                )
+
+                # =================================================
+                # TRANSCRIPT BRANCH RECORD
+                # =================================================
+
                 if transcript is not None:
+
+                    # Actual TSP edge cost.
                     edge_cost = tsp.matrix[
                         current_node.vertex
                     ][neighbour_node]
 
-                    # The reduction cost represents the change in the
-                    # lower bound that cannot be explained by the edge cost.
+                    # Reduced edge cost used by Little's
+                    # Branch and Bound lower-bound calculation.
+                    reduced_edge_cost = (
+                        current_node.matrix[
+                            current_node.vertex
+                        ][neighbour_node]
+                    )
+
+                    # Additional matrix reduction introduced
+                    # when constructing the child.
                     reduction_cost = (
                         child.cost
                         - current_node.cost
-                        - edge_cost
+                        - reduced_edge_cost
                     )
 
                     data = transcript.create_step_data(
@@ -458,23 +530,29 @@ class TspFunction():
                         edge_cost=edge_cost,
                         reduction_cost=reduction_cost,
                         child_lower_bound=child.cost,
-                        pruned=child.cost >= tsp.best_cost
+                        incumbent_cost=incumbent_cost,
+                        pruned=pruned
                     )
 
                     transcript.add_step(data)
 
-                    # Account for the computational work and time
-                    # required to generate the transcript entry.
+                    # Account for transcript-generation work.
                     if transcript_ratio > 0:
                         work += 1 / transcript_ratio
-                        time += 1 / transcript_ratio
+                        time += 1 / (transcript_ratio * search_rate)
 
-                # Only keep the child in the priority queue if its
-                # lower bound indicates that it could improve the
-                # current best solution.
-                if child.cost < tsp.best_cost:
-                    heapq.heappush(priority_queue, child)
+                # =================================================
+                # GENERATION-TIME PRUNING
+                # =================================================
 
-        # The search has not been completely explored during this call.
-        # Another call can continue processing the remaining queue.
+                # Only children whose lower bound is strictly
+                # smaller than the incumbent remain in the queue.
+                if not pruned:
+                    heapq.heappush(
+                        priority_queue,
+                        child
+                    )
+
+        # The search was not completed during this invocation.
+        # A later call can continue processing the same queue.
         return computations, work, time, False

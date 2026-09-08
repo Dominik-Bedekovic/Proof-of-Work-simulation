@@ -425,115 +425,93 @@ def proof_based_validation(
     path,
     proposed_cost,
     transcript,
-    validators
+    validators,
+    transcript_sigma,
+    transcript_root
 ):
 
-    #print("\n========== PROOF VALIDATION START ==========")
-    #print(f"Path: {path}")
-    #print(f"Proposed cost: {proposed_cost}")
-    #print(f"Validators: {len(validators) if validators else 0}")
-    #print(
-    #    f"Transcript steps: "
-    #    f"{len(transcript.steps) if transcript else 'None'}"
-    #)
+    print("Proof based validation")
 
-
-
-    # A transcript is required because it contains the recorded
-    # proof of how the proposed PoUW solution was generated.
     if transcript is None:
         return False, 0, 0.0
 
-    # At least one validator is required to perform validation.
     if not validators:
         return False, 0, 0.0
 
-    #path = tuple(path)
-    #steps = tuple(transcript.steps)
-    #path_index = dict(transcript.path_index)
+    # ---------------------------------------------------------
+    # 1. HAMILTONIAN CYCLE VALIDATION
+    # ---------------------------------------------------------
 
-    #print("\n--- Starting hash-chain validation ---")
+    if not _validate_hamiltonian_cycle(
+        tsp,
+        path
+    ):
+        return False, 0, 0.0
 
-    #(
-    #    hash_valid,
-    #    hash_computations,
-    #    hash_time
-    #) = _parallel_hash_validation(
-    #    transcript,
-    #    validators
-    #)
+    # ---------------------------------------------------------
+    # 2. AUTHENTICATED ROOT VALIDATION
+    # ---------------------------------------------------------
 
-    # =========================================================
-    # 1. TRANSCRIPT HASH-CHAIN VALIDATION
-    # =========================================================
+    root_valid = _validate_transcript_root(
+        tsp,
+        transcript,
+        transcript_sigma,
+        transcript_root
+    )
 
-    # The transcript is divided between the available validators.
-    # Each validator independently verifies its assigned section
-    # of the hash chain.
+    if not root_valid:
+        return False, 0, 0.0
+
+    # ---------------------------------------------------------
+    # 3. HASH-CHAIN VALIDATION
+    # ---------------------------------------------------------
+
     (
         hash_valid,
         hash_computations,
         hash_time
     ) = _parallel_hash_validation(
         transcript,
-        validators
+        validators,
+        transcript_root
     )
 
-    #print("--- Hash-chain validation finished ---")
-    #print(f"Hash valid: {hash_valid}")
-    #print(f"Hash computations: {hash_computations}")
-    #print(f"Hash validation time: {hash_time}")
-
-    #if not hash_valid:
-    #    print("[FAIL] Hash-chain validation failed")
-    #    print("========== PROOF VALIDATION END ==========\n")
-    #    return (
-    #        False,
-    #        hash_computations,
-    #        hash_time
-    #    )
-
-    # If any part of the hash chain is invalid, the transcript
-    # cannot be trusted and the proposed solution is rejected.
     if not hash_valid:
-        return False, hash_computations, hash_time
+        return (
+            False,
+            hash_computations,
+            hash_time
+        )
 
-
-
-    #print("\n--- Starting path validation ---")
-
-    #(
-    #    path_valid,
-    #    path_computations,
-    #    path_time
-    #) = _parallel_path_validation(
-    #    tsp,
-    #    path,
-    #    proposed_cost,
-    #    transcript,
-    #    validators
-    #)
-
-    #print("--- Path validation finished ---")
-    #print(f"Path valid: {path_valid}")
-    #print(f"Path computations: {path_computations}")
-    #print(f"Path validation time: {path_time}")
-
-
-
-    # =========================================================
-    # 2. TSP PATH VALIDATION
-    # =========================================================
-
-    # The proposed path is divided between the validators.
-    # Each validator checks its assigned edges against the TSP
-    # matrix and the corresponding transcript entries.
+    # ---------------------------------------------------------
+    # 4. FULL TRANSCRIPT SEMANTIC VALIDATION
+    # ---------------------------------------------------------
 
     (
-        path_valid,
-        path_computations,
-        path_time
-    ) = _parallel_path_validation(
+        semantic_valid,
+        semantic_computations
+    ) = _validate_transcript_semantics(
+        tsp,
+        transcript
+    )
+
+    if not semantic_valid:
+        return (
+            False,
+            hash_computations
+            + semantic_computations,
+            hash_time
+        )
+
+    # ---------------------------------------------------------
+    # 5. WINNING B&B PATH VALIDATION
+    # ---------------------------------------------------------
+
+    (
+        bnb_valid,
+        bnb_computations,
+        bnb_time
+    ) = _validate_bnb_path(
         tsp,
         path,
         proposed_cost,
@@ -541,39 +519,27 @@ def proof_based_validation(
         validators
     )
 
-    #if not path_valid:
-    #    print("[FAIL] Path validation failed")
-    #    print("========== PROOF VALIDATION END ==========\n")
+    print("Done with bnb path")
 
-    #    return (
-    #        False,
-    #        hash_computations + path_computations,
-    #        hash_time + path_time
-    #    )
-
-    # If the proposed path is invalid, reject the solution.
-    if not path_valid:
-        return (
-            False,
-            hash_computations + path_computations,
-            hash_time + path_time
-        )
-
-    # Both validation stages were completed successfully.
     total_computations = (
         hash_computations
-        + path_computations
+        + semantic_computations
+        + bnb_computations
     )
 
     total_time = (
         hash_time
-        + path_time
+        + bnb_time
     )
 
-    #print("\n[SUCCESS] Proof validation passed")
-    #print(f"Total computations: {total_computations}")
-    #print(f"Total validation time: {total_time}")
-    #print("========== PROOF VALIDATION END ==========\n")
+    if not bnb_valid:
+        return (
+            False,
+            total_computations,
+            total_time
+        )
+
+    print("Done with proof validation")
 
     return (
         True,
@@ -581,11 +547,307 @@ def proof_based_validation(
         total_time
     )
 
+def _validate_transcript_semantics(
+    tsp,
+    transcript
+):
+
+    print("Validating transcript semantics")
+
+    computations = 0
+
+    expected_incumbent = utils.inf
+
+    # Every reconstructed B&B node is stored by its path.
+    known_nodes = {
+        tuple(tsp.tsp_root.path):
+        tsp.tsp_root
+    }
+
+    for step in transcript.steps:
+
+        computations += 1
+
+        data = step["data"]
+
+        step_type = data.get("type")
+
+        # =====================================================
+        # BRANCH EXPANSION
+        # =====================================================
+
+        if step_type == "branch":
+
+            parent_path = tuple(
+                data["parent_path"]
+            )
+
+            parent_node = known_nodes.get(
+                parent_path
+            )
+
+            # Claimed parent must originate from a previously
+            # reconstructed legitimate B&B node.
+            if parent_node is None:
+                return False, computations
+
+            if (
+                data["parent_vertex"]
+                != parent_node.vertex
+            ):
+                return False, computations
+
+            if (
+                data["parent_lower_bound"]
+                != parent_node.cost
+            ):
+                return False, computations
+
+            destination = (
+                data["selected_neighbour"]
+            )
+
+            if (
+                destination < 0
+                or destination >= tsp.size
+            ):
+                return False, computations
+
+            if destination in parent_node.path:
+                return False, computations
+
+            reduced_edge_cost = (
+                parent_node.matrix[
+                    parent_node.vertex
+                ][destination]
+            )
+
+            if reduced_edge_cost == utils.inf:
+                return False, computations
+
+            expected_edge_cost = (
+                tsp.matrix[
+                    parent_node.vertex
+                ][destination]
+            )
+
+            if expected_edge_cost == utils.inf:
+                return False, computations
+
+            # Independently reconstruct the claimed child.
+            expected_child = (
+                TspFunction._create_child(
+                    parent_node,
+                    tsp.matrix,
+                    parent_node.vertex,
+                    destination
+                )
+            )
+
+            expected_reduction_cost = (
+                expected_child.cost
+                - parent_node.cost
+                - reduced_edge_cost
+            )
+
+            if (
+                data["child_path"]
+                != expected_child.path
+            ):
+                return False, computations
+
+            if (
+                data["edge_cost"]
+                != expected_edge_cost
+            ):
+                return False, computations
+
+            if (
+                data["reduction_cost"]
+                != expected_reduction_cost
+            ):
+                return False, computations
+
+            if (
+                data["child_lower_bound"]
+                != expected_child.cost
+            ):
+                return False, computations
+
+            if (
+                data["incumbent_cost"]
+                != expected_incumbent
+            ):
+                return False, computations
+
+            expected_pruned = (
+                expected_child.cost
+                >= expected_incumbent
+            )
+
+            if (
+                data["pruned"]
+                != expected_pruned
+            ):
+                return False, computations
+
+            # Only nodes that survived generation-time pruning
+            # may later appear as parents.
+            if not expected_pruned:
+                known_nodes[
+                    tuple(expected_child.path)
+                ] = expected_child
+
+        # =====================================================
+        # POP-TIME PRUNE
+        # =====================================================
+
+        elif step_type == "prune":
+
+            node_path = tuple(
+                data["path"]
+            )
+
+            node = known_nodes.get(
+                node_path
+            )
+
+            if node is None:
+                return False, computations
+
+            if data["vertex"] != node.vertex:
+                return False, computations
+
+            if (
+                data["lower_bound"]
+                != node.cost
+            ):
+                return False, computations
+
+            # This is exactly the solver condition:
+            #
+            # current_node.cost >= tsp.best_cost
+            #
+            # The claimed incumbent must match the value
+            # independently reconstructed by the validator.
+            if (
+                data["incumbent_cost"]
+                != expected_incumbent
+            ):
+                return False, computations
+
+            # This is the actual B&B pop-time pruning rule.
+            if (
+                node.cost
+                < expected_incumbent
+            ):
+                return False, computations
+
+        # =====================================================
+        # COMPLETE TOUR
+        # =====================================================
+
+        elif step_type == "complete":
+
+            parent_path = tuple(
+                data["parent_path"]
+            )
+
+            parent_node = known_nodes.get(
+                parent_path
+            )
+
+            if parent_node is None:
+                return False, computations
+
+            # A completed tour may only occur after every city
+            # has already been visited.
+            if (
+                parent_node.visited
+                != tsp.size - 1
+            ):
+                return False, computations
+
+            if (
+                data["parent_vertex"]
+                != parent_node.vertex
+            ):
+                return False, computations
+
+            if (
+                data["parent_lower_bound"]
+                != parent_node.cost
+            ):
+                return False, computations
+
+            if (
+                data["selected_neighbour"]
+                != 0
+            ):
+                return False, computations
+
+            expected_edge_cost = (
+                tsp.matrix[
+                    parent_node.vertex
+                ][0]
+            )
+
+            if expected_edge_cost == utils.inf:
+                return False, computations
+
+            if (
+                data["edge_cost"]
+                != expected_edge_cost
+            ):
+                return False, computations
+
+            if (
+                data["child_path"]
+                != parent_node.path + [0]
+            ):
+                return False, computations
+
+            if data["reduction_cost"] is not None:
+                return False, computations
+
+            if data["child_lower_bound"] is not None:
+                return False, computations
+
+            if data["pruned"]:
+                return False, computations
+
+            # The incumbent stored in the transcript must be
+            # the incumbent that existed BEFORE this tour was found.
+            if (
+                data["incumbent_cost"]
+                != expected_incumbent
+            ):
+                return False, computations
+
+            # Independently calculate the actual total cost
+            # of the completed tour.
+            completed_cost = (
+                parent_node.total_cost
+                + expected_edge_cost
+            )
+
+            # If this tour is better, it becomes the new
+            # independently reconstructed incumbent.
+            if completed_cost < expected_incumbent:
+                expected_incumbent = completed_cost
+        else:
+
+            # Unknown transcript record.
+            return False, computations
+
+    return True, computations
 
 def _parallel_hash_validation(
     transcript,
-    validators
+    validators,
+    transcript_root
 ):
+    print("Parallel hash validation")
 
     #print("\n[HASH] Entering _parallel_hash_validation")
 
@@ -614,15 +876,7 @@ def _parallel_hash_validation(
 
     num_validators = len(validators)
 
-    #print(f"[HASH] Validators used: {num_validators}")
-
-    # Calculate the initial hash from the value from which
-    # the transcript hash chain was originally constructed.
-    initial_hash = utils.create_hash(
-        transcript.sigma
-    )
-
-    #print(f"[HASH] Initial hash: {initial_hash}")
+    initial_hash = transcript_root
 
     arguments = []
 
@@ -807,6 +1061,8 @@ def _parallel_hash_validation(
 
 def _hash_slice_worker(args):
 
+    print("Hash slice worker")
+
     (
         validator_index,
         steps,
@@ -932,8 +1188,7 @@ def _hash_slice_worker(args):
         None
     )
 
-
-def _parallel_path_validation(
+def _validate_bnb_path(
     tsp,
     path,
     proposed_cost,
@@ -941,486 +1196,364 @@ def _parallel_path_validation(
     validators
 ):
 
-    #print("\n[PATH] Entering _parallel_path_validation")
-    #print(f"[PATH] Path: {path}")
-    #print(f"[PATH] Proposed cost: {proposed_cost}")
+    print("Validating bnb path")
 
-    # A path is required for validation.
-    #if not path:
-        #print("[PATH FAIL] Path is empty")
-    #    return False, 0, 0.0
-
-    # A path containing fewer than two vertices has no edge to validate.
     if not path:
-        #print("[PATH FAIL] Path is empty")
         return False, 0, 0.0
 
-    # The transcript is required because the path must also be
-    # compared against the recorded proof.
     if transcript is None:
-        #print("[PATH FAIL] Transcript is None")
         return False, 0, 0.0
-
-    edge_count = len(path) - 1
-
-    #print(f"[PATH] Edge count: {edge_count}")
-    #print(
-    #    f"[PATH] Transcript path_index entries: "
-    #    f"{len(transcript.path_index)}"
-    #)
-
-    # There is no reason to create more validators than there
-    # are edges to validate.
-    validators = validators[:min(
-        len(validators),
-        edge_count
-    )]
 
     if not validators:
-        #print("[PATH FAIL] No validators")
         return False, 0, 0.0
 
-    num_validators = len(validators)
-
-    # =========================================================
-    # Divide path between validators.
-    # =========================================================
-
-    base_size = (
-        edge_count // num_validators
-    )
-
-    remainder = (
-        edge_count % num_validators
-    )
-
-    arguments = []
-    current_index = 0
-
-    for validator_index in range(
-        num_validators
-    ):
-
-        slice_size = base_size
-
-        # Distribute remaining edges among the first validators.
-        if validator_index < remainder:
-            slice_size += 1
-
-        start_index = current_index
-        end_index = (
-            start_index + slice_size
-        )
-
-        #print(
-        #    f"[PATH] Validator {validator_index}: "
-        #    f"edges {start_index} to {end_index - 1}"
-        #)
-
-        arguments.append(
-            (
-                validator_index,
-                tsp,
-                path,
-                transcript.path_index,
-                start_index,
-                end_index
-            )
-        )
-
-        current_index = end_index
-
-    #print("[PATH] Starting multiprocessing workers")
-
-    # =========================================================
-    # Execute path validation in parallel.
-    # =========================================================
-
-    #print("BEFORE PATH POOL", flush=True)
-    
-    with multiprocessing.Pool(
-            processes=num_validators
-        ) as pool:
-    
-            results = pool.map(
-                _path_slice_worker,
-                arguments
-            )
-
-    """
-    pool = multiprocessing.Pool(
-        processes=num_validators
-        )
-    
-        try:
-            results = pool.map(
-                _path_slice_worker,
-                arguments
-            )
-        finally:
-            pool.close()
-            pool.join()
-    
-    """
-    """
-    results = [
-            _path_slice_worker(argument)
-            for argument in arguments
-        ]
-    """
-
-    
-    #print("AFTER PATH POOL", flush=True)
-
-    #print("[PATH] Worker results:")
-
-
-    #for result in results:
-        #print(f"    {result}")
-
-    all_valid = True
-    total_computations = 0
-    validator_times = []
-
-    # =========================================================
-    # Process validator results.
-    # =========================================================
-
-    for (
-        validator_index,
-        valid,
-        computations,
-        calculated_cost,
-        error
-    ) in results:
-
-        validator = validators[
-            validator_index
-        ]
-
-        # Count all edge validations performed by the validators.
-        total_computations += computations
-
-        # Convert validation computations into simulated time.
-        if validator.path_validation_rate > 0:
-            validator_time = (
-                computations
-                / validator.path_validation_rate
-            )
-        else:
-            validator_time = 0.0
-
-        validator_times.append(
-            validator_time
-        )
-
-        #print(
-        #    f"[PATH] Validator {validator_index}: "
-        #    f"valid={valid}, "
-        #    f"computations={computations}, "
-        #    f"partial_cost={calculated_cost}, "
-        #    f"error={error}"
-        #)
-
-        # If one validator detects an invalid edge or transcript
-        # entry, the proposed path is rejected.
-        if not valid:
-            all_valid = False
-
-    # Sum the independently calculated costs of all path sections.
-    calculated_cost = sum(
-        result[3]
-        for result in results
-    )
-
-    #print(f"[PATH] Calculated total cost: {calculated_cost}")
-    #print(f"[PATH] Proposed total cost:   {proposed_cost}")
-
-    #if calculated_cost != proposed_cost:
-        #print("[PATH FAIL] Total cost mismatch")
-    #    all_valid = False
-
-    # The independently calculated total must match the cost
-    # claimed by the PoUW miner.
-    if calculated_cost != proposed_cost:
-        all_valid = False
-
-    # Because validators operate in parallel, elapsed validation
-    # time is determined by the slowest validator.
-    validation_time = (
-        max(validator_times)
-        if validator_times
-        else 0.0
-    )
-
-    #print(
-    #    f"[PATH] Final: valid={all_valid}, "
-    #    f"computations={total_computations}, "
-    #    f"time={validation_time}"
-    #)
-
-    return (
-        all_valid,
-        total_computations,
-        validation_time
-    )
-
-
-def _path_slice_worker(args):
-
-    (
-        validator_index,
-        tsp,
-        path,
-        path_index,
-        start_index,
-        end_index
-    ) = args
-
-    #print(
-    #    f"[PATH WORKER {validator_index}] "
-    #    f"Started: edges {start_index} -> {end_index - 1}"
-    #)
+    current_node = tsp.tsp_root
 
     computations = 0
     calculated_cost = 0
 
-    # Validate every edge assigned to this validator.
-    for i in range(
-        start_index,
-        end_index
-    ):
-
-        # One edge validation represents one validation computation.
-        computations += 1
-
-        source = path[i]
-        destination = path[i + 1]
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Checking edge {source} -> {destination}"
-        #)
-
-        # =====================================================
-        # Verify that the edge exists.
-        # =====================================================
-
-        expected_edge_cost = (
-            tsp.matrix[source][destination]
-        )
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Matrix cost = {expected_edge_cost}"
-        #)
-
-        #if expected_edge_cost == utils.inf:
-            #print(
-        #        f"[PATH WORKER {validator_index} FAIL] "
-        #        f"Edge does not exist"
-        #    )
-
-        if expected_edge_cost == utils.inf:
-            return (
-                validator_index,
-                False,
-                computations,
-                calculated_cost,
-                (
-                    f"Edge {source} -> "
-                    f"{destination} does not exist."
-                )
-            )
-
-        # Add the independently verified edge cost to the
-        # validator's partial path cost.
-        calculated_cost += expected_edge_cost
-
-        # =====================================================
-        # Find the corresponding transcript entry.
-        # =====================================================
-
-        # The key identifies the path prefix and the newly
-        # selected destination.
-        key = (
-            tuple(path[:i + 1]),
-            destination
-        )
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Looking for key: {key}"
-        #)
-
-        data = path_index.get(key)
-
-        if data is None:
-
-            #print(
-            #    f"[PATH WORKER {validator_index} FAIL] "
-            #    f"Transcript key not found: {key}"
-            #)
-
-            #print(
-            #    f"[PATH WORKER {validator_index}] "
-            #    f"Available keys:"
-            #)
-
-
-            #for existing_key in path_index.keys():
-                #print(f"    {existing_key}")
-
-            return (
-                validator_index,
-                False,
-                computations,
-                calculated_cost,
-                (
-                    f"Edge {source} -> "
-                    f"{destination} was not found "
-                    f"in transcript."
-                )
-            )
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Transcript data: {data}"
-        #)
-
-        #if data["edge_cost"] != expected_edge_cost:
-            #print(
-            #    f"[PATH WORKER {validator_index} FAIL] "
-            #    f"Edge cost mismatch"
-            #)
-            #print(
-            #    f"Expected: {expected_edge_cost}, "
-            #    f"stored: {data['edge_cost']}"
-            #)
-
-        # =====================================================
-        # Verify the recorded edge cost.
-        # =====================================================
-
-        # The transcript must contain the same edge cost
-        # as the original TSP matrix.
-        if data["edge_cost"] != expected_edge_cost:
-            return (
-                validator_index,
-                False,
-                computations,
-                calculated_cost,
-                (
-                    f"Edge cost mismatch for "
-                    f"{source} -> {destination}."
-                )
-            )
-
-        # =====================================================
-        # Verify the recorded child path.
-        # =====================================================
-
-        # Reconstruct the path that should have been recorded
-        # after adding the destination city.
-        expected_child_path = (
-            path[:i + 2]
-        )
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Expected child path: {expected_child_path}"
-        #)
-
-        #print(
-        #    f"[PATH WORKER {validator_index}] "
-        #    f"Stored child path:   {data['child_path']}"
-        #)
-
-        if data["child_path"] != expected_child_path:
-
-            #print(
-            #    f"[PATH WORKER {validator_index} FAIL] "
-            #    f"Child path mismatch"
-            #)
-
-            return (
-                validator_index,
-                False,
-                computations,
-                calculated_cost,
-                (
-                    f"Child path mismatch for "
-                    f"{source} -> {destination}."
-                )
-            )
-
-    #print(
-    #    f"[PATH WORKER {validator_index}] "
-    #    f"Passed. Partial cost = {calculated_cost}"
-    #)
-
-    # Every assigned edge passed validation.
-    return (
-        validator_index,
-        True,
-        computations,
-        calculated_cost,
-        None
-    )
-
-
-def _validate_calculated_path(
-    tsp,
-    path,
-    proposed_cost,
-    transcript
-):
-    total_cost = 0
-
-    # Check every edge in the proposed path.
     for i in range(len(path) - 1):
 
         source = path[i]
         destination = path[i + 1]
 
-        # Retrieve the expected edge cost from the TSP matrix.
-        expected_edge_cost = (
-            tsp.matrix[source][destination]
+        computations += 1
+
+        if (
+            current_node.path
+            != path[:i + 1]
+        ):
+            return False, computations, 0.0
+
+        if current_node.vertex != source:
+            return False, computations, 0.0
+
+        # =====================================================
+        # FINAL RETURN TO CITY 0
+        # =====================================================
+
+        if i == len(path) - 2:
+
+            if (
+                current_node.visited
+                != tsp.size - 1
+            ):
+                return False, computations, 0.0
+
+            if destination != 0:
+                return False, computations, 0.0
+
+            final_edge = tsp.matrix[
+                source
+            ][0]
+
+            if final_edge == utils.inf:
+                return False, computations, 0.0
+
+            calculated_cost += final_edge
+
+            key = (
+                tuple(current_node.path),
+                0
+            )
+
+            data = transcript.path_index.get(
+                key
+            )
+
+            if data is None:
+                return False, computations, 0.0
+
+            if data.get("type") != "complete":
+                return False, computations, 0.0
+
+            if (
+                data["parent_path"]
+                != current_node.path
+            ):
+                return False, computations, 0.0
+
+            if (
+                data["parent_vertex"]
+                != current_node.vertex
+            ):
+                return False, computations, 0.0
+
+            if (
+                data["parent_lower_bound"]
+                != current_node.cost
+            ):
+                return False, computations, 0.0
+
+            if (
+                data["child_path"]
+                != current_node.path + [0]
+            ):
+                return False, computations, 0.0
+
+            if (
+                data["edge_cost"]
+                != final_edge
+            ):
+                return False, computations, 0.0
+
+            continue
+
+        # =====================================================
+        # NORMAL B&B TRANSITION
+        # =====================================================
+
+        if destination in current_node.path:
+            return False, computations, 0.0
+
+        reduced_edge_cost = (
+            current_node.matrix[
+                source
+            ][destination]
         )
 
-        # The edge must exist in the graph.
-        if expected_edge_cost == utils.inf:
-            return False
+        if reduced_edge_cost == utils.inf:
+            return False, computations, 0.0
 
-        total_cost += expected_edge_cost
+        edge_cost = tsp.matrix[
+            source
+        ][destination]
 
-        # Find the corresponding edge in the transcript.
+        if edge_cost == utils.inf:
+            return False, computations, 0.0
+
+        calculated_cost += edge_cost
+
+        expected_child = (
+            TspFunction._create_child(
+                current_node,
+                tsp.matrix,
+                source,
+                destination
+            )
+        )
+
+        expected_reduction_cost = (
+            expected_child.cost
+            - current_node.cost
+            - reduced_edge_cost
+        )
+
         key = (
-            tuple(path[:i + 1]),
+            tuple(current_node.path),
             destination
         )
 
-        data = transcript.path_index.get(key)
+        data = transcript.path_index.get(
+            key
+        )
 
         if data is None:
-            return False
+            return False, computations, 0.0
 
-        # Verify that the transcript recorded the same edge cost
-        # as the original TSP matrix.
-        if data["edge_cost"] != expected_edge_cost:
-            return False
+        if data.get("type") != "branch":
+            return False, computations, 0.0
 
-        # Verify that the transcript recorded the correct path
-        # after adding the destination city.
-        expected_child_path = path[:i + 2]
+        if (
+            data["parent_path"]
+            != current_node.path
+        ):
+            return False, computations, 0.0
 
-        if data["child_path"] != expected_child_path:
-            return False
+        if (
+            data["parent_vertex"]
+            != current_node.vertex
+        ):
+            return False, computations, 0.0
 
-    # Finally, compare the independently calculated path cost
-    # with the cost claimed by the PoUW miner.
-    if total_cost != proposed_cost:
+        if (
+            data["parent_lower_bound"]
+            != current_node.cost
+        ):
+            return False, computations, 0.0
+
+        if (
+            data["selected_neighbour"]
+            != destination
+        ):
+            return False, computations, 0.0
+
+        if (
+            data["child_path"]
+            != expected_child.path
+        ):
+            return False, computations, 0.0
+
+        if (
+            data["edge_cost"]
+            != edge_cost
+        ):
+            return False, computations, 0.0
+
+        if (
+            data["reduction_cost"]
+            != expected_reduction_cost
+        ):
+            return False, computations, 0.0
+
+        if (
+            data["child_lower_bound"]
+            != expected_child.cost
+        ):
+            return False, computations, 0.0
+
+        # The winning branch cannot have been pruned.
+        if data["pruned"]:
+            return False, computations, 0.0
+
+        current_node = expected_child
+
+    if calculated_cost != proposed_cost:
+        return False, computations, 0.0
+
+    if validators[0].bnb_validation_rate > 0:
+        validation_time = (
+            computations
+            / validators[0].bnb_validation_rate
+        )
+    else:
+        validation_time = 0.0
+
+    return (
+        True,
+        computations,
+        validation_time
+    )
+
+def _validate_hamiltonian_cycle(tsp, path):
+
+    print("Validating hamiltonian cycle")
+    # A path must exist.
+    if not path:
+        return False
+
+    # A Hamiltonian cycle over n cities contains n + 1 vertices
+    # because the starting city is repeated at the end.
+    if len(path) != tsp.size + 1:
+        return False
+
+    # The implemented TSP search always starts and ends at city 0.
+    if path[0] != 0 or path[-1] != 0:
+        return False
+
+    # Every city before the final repeated 0 must be a valid city.
+    if any(
+        vertex < 0 or vertex >= tsp.size
+        for vertex in path[:-1]
+    ):
+        return False
+
+    # Every city must occur exactly once before returning to city 0.
+    if len(set(path[:-1])) != tsp.size:
         return False
 
     return True
 
+def _validate_transcript_root(
+    tsp,
+    transcript,
+    transcript_sigma,
+    transcript_root
+):
+
+    print("Validating transcript root")
+
+    # The transcript must contain an authenticated root.
+    if not hasattr(transcript, "root"):
+        return False
+
+    root = tsp.tsp_root
+
+    expected_children = []
+
+    # Independently reconstruct every legal first-level child.
+    for neighbour in range(root.size):
+
+        if (
+            root.matrix[
+                root.vertex
+            ][neighbour] == utils.inf
+        ):
+            continue
+
+        if neighbour in root.path:
+            continue
+
+        child = TspFunction._create_child(
+            root,
+            tsp.matrix,
+            root.vertex,
+            neighbour
+        )
+
+        edge_cost = tsp.matrix[
+            root.vertex
+        ][neighbour]
+
+        reduced_edge_cost = root.matrix[
+            root.vertex
+        ][neighbour]
+
+        reduction_cost = (
+            child.cost
+            - root.cost
+            - reduced_edge_cost
+        )
+
+        expected_children.append({
+            "selected_neighbour": neighbour,
+            "child_path": child.path[:],
+            "edge_cost": edge_cost,
+            "reduction_cost": reduction_cost,
+            "child_lower_bound": child.cost
+        })
+
+    # Reconstruct exactly the same root data MainFunctions
+    # generated before mining began.
+    expected_root_data = {
+        "path": root.path[:],
+        "vertex": root.vertex,
+        "visited": root.visited,
+        "lower_bound": root.cost,
+        "children": expected_children
+    }
+
+    # Transcript must contain the correct root data.
+    if (
+        transcript.root["data"]
+        != expected_root_data
+    ):
+        return False
+
+    # Root must really be step 0.
+    if transcript.root["step"] != 0:
+        return False
+
+    if transcript.root["previous_hash"] is not None:
+        return False
+
+    # Independently reconstruct the root hash.
+    calculated_root_hash = utils.create_hash(
+        transcript_sigma.hex()
+        + str(expected_root_data)
+        + str(tsp.matrix)
+    )
+
+    # It must equal the root that MainFunctions created
+    # before mining started.
+    if calculated_root_hash != transcript_root:
+        return False
+
+    # The transcript must also contain that exact root.
+    if (
+        transcript.root["hash"]
+        != transcript_root
+    ):
+        return False
+
+    return True

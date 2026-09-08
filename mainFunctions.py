@@ -1,8 +1,10 @@
 from nodes import Node
 import powWorker
+from tspFunctions import TspFunction
 import utils
 import benchmark
 import multiprocessing
+import secrets
 
 from blockData import BlockData
 from validation import council_validation
@@ -28,12 +30,6 @@ class MainFunctions:
         validation_mode,
         benchmark_progress_callback=None
     ):
-        # Reset ratios shared between nodes.
-        #Node.pouw_pow_ratio = 0
-        #Node.validation_pow_ratio = 0
-        #Node.transcript_pouw_ratio = 0
-        #Node.path_validation_pow_ratio = 0
-        #Node.hash_validation_pow_ratio = 0
 
         # Store the simulation parameters.
         self.num_of_nodes = num_of_nodes
@@ -63,7 +59,6 @@ class MainFunctions:
 
         Node.validation_pow_ratio = 0
         Node.transcript_pouw_ratio = 0
-        Node.path_validation_pow_ratio = 0
         Node.hash_validation_pow_ratio = 0
 
         if self.validation_mode & COUNCIL_VALIDATION:
@@ -76,11 +71,6 @@ class MainFunctions:
             Node.transcript_pouw_ratio = (
                 MainFunctions.transcript_per_second
                 / MainFunctions.computations_per_second
-            )
-
-            Node.path_validation_pow_ratio = (
-                MainFunctions.path_validation_per_second
-                / MainFunctions.hashes_per_second
             )
 
             Node.hash_validation_pow_ratio = (
@@ -100,10 +90,10 @@ class MainFunctions:
         #    [node.search_rate for node in self.node_list],
         #    flush=True
         #)
-
     def run_benchmarks(self, progress_callback=None):
 
         def benchmark_progress(step, total, message):
+
             if progress_callback is not None:
                 progress_callback(step, total, message)
 
@@ -112,10 +102,24 @@ class MainFunctions:
         if self.validation_mode & COUNCIL_VALIDATION:
             total_benchmarks += 1
 
+        # Proof validation now benchmarks:
+        # 1. transcript generation
+        # 2. transcript hash validation
+        # 3. B&B proof validation
         if self.validation_mode & PROOF_VALIDATION:
             total_benchmarks += 3
 
         completed_benchmarks = 0
+
+        # ---------------------------------------------------------
+        # POW BENCHMARK
+        # ---------------------------------------------------------
+
+        benchmark_progress(
+            completed_benchmarks,
+            total_benchmarks,
+            "Benchmarking PoW..."
+        )
 
         # Measure the average number of SHA-256 hashes
         # that can be calculated per second.
@@ -126,7 +130,17 @@ class MainFunctions:
             )
         )
 
-        completed_benchmarks += 1        
+        completed_benchmarks += 1
+
+        # ---------------------------------------------------------
+        # POUW BENCHMARK
+        # ---------------------------------------------------------
+
+        benchmark_progress(
+            completed_benchmarks,
+            total_benchmarks,
+            "Benchmarking PoUW..."
+        )
 
         # Measure the average number of TSP search
         # computations that can be performed per second.
@@ -147,8 +161,18 @@ class MainFunctions:
             / MainFunctions.hashes_per_second
         )
 
-        # Benchmark council validation when it is enabled.
+        # ---------------------------------------------------------
+        # COUNCIL VALIDATION BENCHMARK
+        # ---------------------------------------------------------
+
         if self.validation_mode & COUNCIL_VALIDATION:
+
+            benchmark_progress(
+                completed_benchmarks,
+                total_benchmarks,
+                "Benchmarking council validation..."
+            )
+
             MainFunctions.validations_per_second = (
                 utils.average_runs(
                     lambda: benchmark.benchmark_validation(
@@ -165,9 +189,22 @@ class MainFunctions:
 
             completed_benchmarks += 1
 
-        # Benchmark transcript generation when proof validation is enabled.
+        # ---------------------------------------------------------
+        # PROOF VALIDATION BENCHMARKS
+        # ---------------------------------------------------------
+
         if self.validation_mode & PROOF_VALIDATION:
-            #print("INITIALIZING PROOF VALIDATION")
+
+            # -----------------------------------------------------
+            # TRANSCRIPT GENERATION
+            # -----------------------------------------------------
+
+            benchmark_progress(
+                completed_benchmarks,
+                total_benchmarks,
+                "Benchmarking transcript generation..."
+            )
+
             MainFunctions.transcript_per_second = (
                 utils.average_runs(
                     benchmark.benchmark_transcript,
@@ -175,6 +212,8 @@ class MainFunctions:
                 )
             )
 
+            # Transcript generation happens alongside PoUW work,
+            # so compare it against PoUW computations.
             Node.transcript_pouw_ratio = (
                 MainFunctions.transcript_per_second
                 / MainFunctions.computations_per_second
@@ -182,24 +221,16 @@ class MainFunctions:
 
             completed_benchmarks += 1
 
-            # Benchmark validation of the TSP path.
-            MainFunctions.path_validation_per_second = (
-                utils.average_runs(
-                    lambda: benchmark.benchmark_path_validation(
-                        size=self.num_of_cities
-                    ),
-                    self.runs
-                )
+            # -----------------------------------------------------
+            # HASH-CHAIN VALIDATION
+            # -----------------------------------------------------
+
+            benchmark_progress(
+                completed_benchmarks,
+                total_benchmarks,
+                "Benchmarking transcript hash validation..."
             )
 
-            completed_benchmarks += 1
-
-            Node.path_validation_pow_ratio = (
-                MainFunctions.path_validation_per_second
-                / MainFunctions.hashes_per_second
-            )
-
-            # Benchmark validation of the transcript hashes.
             MainFunctions.hash_validation_per_second = (
                 utils.average_runs(
                     lambda: benchmark.benchmark_hash_validation(
@@ -209,16 +240,53 @@ class MainFunctions:
                 )
             )
 
-            completed_benchmarks += 1
-
             Node.hash_validation_pow_ratio = (
                 MainFunctions.hash_validation_per_second
                 / MainFunctions.hashes_per_second
             )
 
+            completed_benchmarks += 1
+
+            # -----------------------------------------------------
+            # B&B PROOF VALIDATION
+            # -----------------------------------------------------
+
+            benchmark_progress(
+                completed_benchmarks,
+                total_benchmarks,
+                "Benchmarking B&B proof validation..."
+            )
+
+            MainFunctions.bnb_validation_per_second = (
+                utils.average_runs(
+                    benchmark.benchmark_bnb_validation,
+                    self.runs
+                )
+            )
+
+            Node.bnb_validation_pow_ratio = (
+                MainFunctions.bnb_validation_per_second
+                / MainFunctions.hashes_per_second
+            )
+
+            completed_benchmarks += 1
+
+        # ---------------------------------------------------------
+        # FINISH
+        # ---------------------------------------------------------
+
+        benchmark_progress(
+            completed_benchmarks,
+            total_benchmarks,
+            "Benchmarks complete."
+        )
+
         # Mark the benchmarks as completed so they are not repeated.
         MainFunctions.benchmarks_done = True
-        MainFunctions.benchmarked_validation_mode = self.validation_mode
+
+        MainFunctions.benchmarked_validation_mode = (
+            self.validation_mode
+        )
 
     # Create the nodes used by the simulation.
     def create_nodes(self):
@@ -229,7 +297,65 @@ class MainFunctions:
 
         # Create the shared transcript when proof validation is enabled.
         if self.validation_mode & PROOF_VALIDATION:
-            Node.initialize_transcript()
+
+            # Generate a random 32-byte value to initialize the transcript.
+            self.transcript_sigma = secrets.token_bytes(32)
+
+            # Create the hash of the initial transcript state.
+            root = Node.tsp.tsp_root
+
+            root_children = []
+
+            for neighbour in range(root.size):
+
+                if (root.matrix[root.vertex][neighbour] == utils.inf):
+                    continue
+
+                if neighbour in root.path:
+                    continue
+
+                child = TspFunction._create_child(
+                    root,
+                    Node.tsp.matrix,
+                    root.vertex,
+                    neighbour
+                )
+
+                edge_cost = Node.tsp.matrix[
+                root.vertex][neighbour]
+
+                reduced_edge_cost = root.matrix[
+                    root.vertex][neighbour]
+
+                reduction_cost = (
+                    child.cost
+                    - root.cost
+                    -reduced_edge_cost
+                )
+
+                root_children.append({
+                    "selected_neighbour": neighbour,
+                    "child_path": child.path[:],
+                    "edge_cost": edge_cost,
+                    "reduction_cost": reduction_cost,
+                    "child_lower_bound": child.cost
+                })
+
+            root_data = {
+                "path": root.path[:],
+                "vertex": root.vertex,
+                "visited": root.visited,
+                "lower_bound": root.cost,
+                "children": root_children
+            }
+
+            self.transcript_root = utils.create_hash(
+                self.transcript_sigma.hex()
+                + str(root_data)
+                + str(Node.tsp.matrix)
+            )
+
+            Node.initialize_transcript(root_data, self.transcript_root)
 
         # Create the configured number of nodes.
         self.node_list = []
@@ -424,6 +550,8 @@ class MainFunctions:
         # Validation time for the selected validation method.
         validation_time = 0.0
 
+        validation_valid = True
+
         while not Node.found:
 
             results = []
@@ -567,7 +695,9 @@ class MainFunctions:
                         self.node_list[0].tsp.best_path,
                         self.node_list[0].tsp.best_cost,
                         Node.transcript,
-                        validators
+                        validators,
+                        self.transcript_sigma,
+                        self.transcript_root
                     )
 
                     validation_computations += (
@@ -576,6 +706,10 @@ class MainFunctions:
 
                     validation_time += (
                         proof_time
+                    )
+
+                    validation_valid = (
+                       validation_valid and proof_valid
                     )
 
                 # --------------------------------------------------
@@ -607,6 +741,10 @@ class MainFunctions:
 
                     validation_time += (
                         council_time
+                    )
+
+                    validation_valid = (
+                       validation_valid and council_result
                     )
 
                 # --------------------------------------------------
@@ -657,6 +795,9 @@ class MainFunctions:
 
                     "validation_time":
                         validation_time,
+
+                    "validation_valid":
+                        validation_valid,
 
                     # -----------------------------
                     # PoUW + validation
@@ -792,6 +933,14 @@ class MainFunctions:
 
             # Run PoUW using the currently selected validation mode.
             result = self.multiple_node_pouw_tsp()
+
+            if (self.validation_mode != NO_VALIDATION
+                and not result["validation_valid"]
+                ):
+                raise RuntimeError(
+                    "PoUW solution failed validation and was rejected."
+                )
+
 
             pouw_results.append(result)
 

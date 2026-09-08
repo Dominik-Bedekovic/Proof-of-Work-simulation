@@ -1,3 +1,5 @@
+import random
+
 from tspFunctions import TspFunction
 from tspNode import TspNode
 import utils
@@ -10,36 +12,42 @@ class TspData:
         # Store the number of cities in the TSP instance.
         self.size = size
 
-        # The matrix used for benchmarking
+        # =====================================================
+        # BENCHMARK MATRIX
+        # =====================================================
         if benchmark:
+
+            # Local deterministic random generator.
+            # This does not affect randomness elsewhere
+            # in the simulation.
+            rng = random.Random(12345)
+
+            # Create an empty symmetric TSP matrix.
             self.matrix = [
-                [utils.inf, 20, 200, 30, 100, 200, 10, 800, 40, 10, 400],
-                [20, utils.inf, 40, 620, 400, 30, 900, 930, 400, 30, 670],
-                [200, 40, utils.inf, 20, 570, 800, 200, 40, 20, 10, 700],
-                [30, 620, 20, utils.inf, 100, 900, 60, 100, 90, 30, 20],
-                [100, 400, 570, 100, utils.inf, 30, 40, 900, 300, 200, 600],
-                [200, 30, 800, 900, 30, utils.inf, 60, 80, 40, 140, 10],
-                [10, 900, 200, 60, 40, 60, utils.inf, 800, 50, 20, 50],
-                [800, 930, 40, 100, 900, 80, 800, utils.inf, 500, 50, 40],
-                [40, 400, 20, 90, 300, 40, 50, 500, utils.inf, 60, 70],
-                [10, 30, 10, 30, 200, 140, 20, 50, 60, utils.inf, 30],
-                [400, 670, 700, 20, 600, 10, 50, 40, 70, 30, utils.inf]
+                [utils.inf for _ in range(size)]
+                for _ in range(size)
             ]
-        elif size == 0:
-            print("Test matrix")
-            self.matrix = [
-                [utils.inf, 250, 700,  40, 840],
-                [250, utils.inf, 120, 790, 640],
-                [700, 120, utils.inf,  60,  40],
-                [40,  790,  60, utils.inf, 600],
-                [840, 640,  40, 600, utils.inf]
-            ] 
+
+            # Generate one distance for each undirected edge.
+            for i in range(size):
+                for j in range(i + 1, size):
+
+                    value = rng.randint(10, 1000)
+
+                    self.matrix[i][j] = value
+                    self.matrix[j][i] = value
+
+        # =====================================================
+        # NORMAL SIMULATION MATRIX
+        # =====================================================
         else:
-            # Generate the distance matrix representing the complete graph.
+
+            # Generate a random TSP matrix for the simulation.
             self.matrix = TspFunction._make_tsp_matrix(size)
-                    
+
+        # Store the actual number of cities.
         self.size = len(self.matrix)
-            
+
         # Reduce the initial matrix and calculate its reduction cost.
         # The reduction cost is used as the initial lower bound.
         self.reduced_matrix, self.cost = (
@@ -61,14 +69,13 @@ class TspData:
             row[:] for row in self.reduced_matrix
         ]
 
-        # The search starts from the first city which is 0.
+        # The search starts from city 0.
         self.tsp_root.path.append(0)
 
         # Set the lower-bound cost of the root node.
         self.tsp_root.cost = self.cost
 
-        # Add the root node to the priority queue so that the
-        # search can begin.
+        # Add the root node to the priority queue.
         self.priority_queue.append(self.tsp_root)
 
         self.best_node = None

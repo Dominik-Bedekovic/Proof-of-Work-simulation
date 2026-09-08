@@ -61,10 +61,12 @@ class Node:
         # Calculate the corresponding PoUW search rate using the
         # measured ratio between PoW and PoUW computational rates.
         ratio = getattr(Node, "pouw_pow_ratio", 1)
-        self.search_rate = round(self.hash_rate * ratio)
+        self.search_rate = self.hash_rate * ratio
+        self.search_credit = 0.0
+        self.previous_search_credit = 0.0
 
         validation_ratio = getattr(Node, "validation_pow_ratio", 0)
-        self.validation_rate = round(self.hash_rate * validation_ratio)
+        self.validation_rate = self.hash_rate * validation_ratio
 
         # Calculate the corresponding transcript rate.
         transcript_ratio = getattr(
@@ -119,11 +121,18 @@ class Node:
     def pouw_mining(self):
         # Process a batch of TSP search-tree nodes according to the
         # simulated search rate of this node.
+        self.previous_search_credit = self.search_credit
+
+        self.search_credit += self.search_rate
+
+        operations = int(self.search_credit)
+
+        self.search_credit -= operations
 
         transcript = (Node.transcript)
         temp_computation, work, transcript_time, finished = TspFunction.tsp_solver(
             self.tsp,
-            self.search_rate,
+            operations,
             transcript,
             Node.transcript_pouw_ratio
         )
@@ -131,8 +140,8 @@ class Node:
         # Add the number of processed search nodes to the node's
         # total computational work.
         self.work += work
-        self.computations += work
+        self.computations += temp_computation
 
         # Return the number of computations performed and indicate
         # whether the shared TSP search has been completed.
-        return temp_computation, self.work, transcript_time, finished
+        return self.computations, self.work, transcript_time, finished

@@ -9,6 +9,7 @@ import secrets
 from blockData import BlockData
 from validation import council_validation
 from validation import proof_based_validation
+import heapq
 
 # Validation modes
 NO_VALIDATION = 0b00
@@ -497,11 +498,29 @@ class MainFunctions:
                     for node in self.node_list
                 )
 
+                pow_work = (
+                    total_mining_count 
+                    / MainFunctions.hashes_per_second
+                )
+
+                print(
+                    "TOTAL HASH RATE:",
+                    sum(node.hash_rate for node in self.node_list)
+                )
+
+                print(
+                    "POW OBSERVED RATE:",
+                    total_mining_count / Node.simulation_time
+                )
+
                 # Return the simulation results to the benchmark
                 # and GUI layers.
                 return {
                     "total_hashes":
                         total_mining_count,
+
+                    "compute_work":
+                        pow_work,
 
                     "simulation_time":
                         Node.simulation_time,
@@ -535,347 +554,376 @@ class MainFunctions:
                     }
                 }
 
-
-    # Run the Proof-of-Useful-Work TSP simulation.
     def multiple_node_pouw_tsp(self):
 
         if all(node.search_rate <= 0 for node in self.node_list):
             raise RuntimeError("All PoUW search rates are zero")
 
+        # ----------------------------------------------------------
         # Time spent performing PoUW mining.
-        # This includes transcript generation because the transcript
-        # is generated during the PoUW search.
+        # ----------------------------------------------------------
         pouw_time = 0.0
 
-        # Validation time for the selected validation method.
+        # Validation values.
         validation_time = 0.0
-
         validation_valid = True
 
-        while not Node.found:
+        # ----------------------------------------------------------
+        # Event-driven PoUW scheduler
+        # ----------------------------------------------------------
+        # Each event represents the simulated time at which
+        # one node completes its next B&B search operation.
+        event_queue = []
 
-            results = []
+        for index, node in enumerate(self.node_list):
 
-            # Let every node perform one batch of TSP computations.
-            for node in self.node_list:
+            if node.search_rate > 0:
 
+                first_event_time = (
+                    1.0 / node.search_rate
+                )
+
+                heapq.heappush(
+                    event_queue,
+                    (
+                        first_event_time,
+                        index,
+                        node
+                    )
+                )
+
+        finishing_node = None
+
+        # ----------------------------------------------------------
+        # Process B&B operations in simulated completion-time order.
+        # ----------------------------------------------------------
+        while event_queue:
+
+            (
+                event_time,
+                node_index,
+                node
+            ) = heapq.heappop(event_queue)
+
+            pouw_time = event_time
+            Node.simulation_time = event_time
+
+            (
+                computations,
+                work,
+                _,
+                finished
+            ) = TspFunction.tsp_solver(
+                Node.tsp,
+                1,
+                Node.transcript,
+                Node.transcript_pouw_ratio
+            )
+
+            # Raw B&B nodes processed.
+            node.computations += computations
+
+            # Equivalent computational work.
+            # In proof mode this may also contain transcript work.
+            node.work += work
+
+            # ------------------------------------------------------
+            # Search completed.
+            # ------------------------------------------------------
+            if finished:
+
+                Node.found = True
+                finishing_node = node
+
+                break
+
+            # ------------------------------------------------------
+            # Schedule this node's next B&B operation.
+            # ------------------------------------------------------
+
+            # Transcript work is represented in B&B-equivalent
+            # computational work units.
+            transcript_equivalent_work = max(
+                0.0,
+                work - computations
+            )
+
+            transcript_delay = (
+                transcript_equivalent_work
+                / node.search_rate
+            )
+
+            next_event_time = (
+                event_time
+                + transcript_delay
+                + (1.0 / node.search_rate)
+            )
+
+            heapq.heappush(
+                event_queue,
                 (
-                    computations,
-                    _,
-                    transcript_time,
-                    finished
-                ) = node.pouw_mining()
-
-                results.append(
-                    (
-                        computations,
-                        transcript_time,
-                        finished
-                    )
+                    next_event_time,
+                    node_index,
+                    node
                 )
+            )
 
-                # Stop the search when a node finds the solution.
-                if finished:
-                    Node.found = True
+        # ----------------------------------------------------------
+        # Safety check.
+        # ----------------------------------------------------------
+        if finishing_node is None:
+            raise RuntimeError(
+                "PoUW event queue became empty before TSP completion."
+            )
 
-            # Check whether the search has finished.
-            if Node.found:
+        # ----------------------------------------------------------
+        # Display final TSP result.
+        # ----------------------------------------------------------
+        print("TSP Matrix", Node.tsp.matrix)
+        print("Best TSP path:", Node.tsp.best_path)
+        print("Best TSP cost:", Node.tsp.best_cost)
 
-                # Find the node that finished the search first.
-                finishing_node_index = next(
-                    i
-                    for i, result in enumerate(results)
-                    if result[2]
-                )
+        # ----------------------------------------------------------
+        # Winning TSP search node.
+        # ----------------------------------------------------------
+        winning_node = (
+            self.node_list[0]
+            .tsp
+            .best_node
+        )
 
-                finishing_node = (
-                    self.node_list[
-                        finishing_node_index
-                    ]
-                )
+        # ----------------------------------------------------------
+        # Total raw PoUW B&B computations.
+        # ----------------------------------------------------------
+        pouw_computations = sum(
+            node.computations
+            for node in self.node_list
+        )
 
-                print("TSP Matrix", Node.tsp.matrix)
-                print("Best TSP path:", Node.tsp.best_path)
-                print("Best TSP cost:", Node.tsp.best_cost)
+        # Reference-machine computational work.
+        pouw_work = (
+            pouw_computations
+            / MainFunctions.computations_per_second
+        )
 
-                finishing_node_computations = (
-                    results[
-                        finishing_node_index
-                    ][0]
-                )
+        # Temporary diagnostics.
+        print(
+            "POUW COMPUTATIONS:",
+            pouw_computations
+        )
 
-                # Get the transcript time belonging to the
-                # finishing node.
-                finishing_node_transcript_time = (
-                    results[
-                        finishing_node_index
-                    ][1]
-                )
+        print(
+            "POUW TIME:",
+            pouw_time
+        )
 
-                # Calculate the final fraction of the simulation step.
-                #
-                # The first term represents the fraction of a second
-                # required to perform the finishing node's computations.
-                #
-                # The second term represents the transcript generation
-                # time associated with that batch.
-                winner_time = (
-                    finishing_node_computations
-                    / finishing_node.search_rate
-                    + finishing_node_transcript_time
-                )
+        print(
+            "THEORETICAL TIME:",
+            pouw_computations
+            / sum(
+                node.search_rate
+                for node in self.node_list
+            )
+        )
 
-                # Remove work that would not have been performed
-                # because the winning node finished before the other
-                # nodes completed their current batch.
-                if finishing_node_computations > 0:
+        print(
+            "TOTAL SEARCH RATE:",
+            sum(
+                node.search_rate
+                for node in self.node_list
+            )
+        )
 
-                    for i, node in enumerate(
-                        self.node_list[:len(results)]
-                    ):
+        print(
+            "POUW OBSERVED RATE:",
+            pouw_computations / pouw_time
+        )
 
-                        if node is not finishing_node:
+        # ----------------------------------------------------------
+        # Validation starts with zero cost.
+        # ----------------------------------------------------------
+        validation_computations = 0
+        validation_time = 0.0
 
-                            computation_done = (
-                                results[i][0]
-                            )
+        # ----------------------------------------------------------
+        # Proof validation
+        # ----------------------------------------------------------
+        if self.validation_mode & PROOF_VALIDATION:
 
-                            final_batch = round(
-                                node.search_rate
-                                * winner_time
-                            )
+            validators = [
+                node
+                for node in self.node_list
+                if node is not finishing_node
+            ]
 
-                            node.computations -= (
-                                computation_done
-                                - final_batch
-                            )
+            (
+                proof_valid,
+                proof_computations,
+                proof_time
+            ) = proof_based_validation(
+                self.node_list[0].tsp,
+                self.node_list[0].tsp.best_path,
+                self.node_list[0].tsp.best_cost,
+                Node.transcript,
+                validators,
+                self.transcript_sigma,
+                self.transcript_root
+            )
 
-                # The time accumulated before the final batch.
-                # winner_time represents the final partial step.
-                pouw_time += winner_time
+            validation_computations += (
+                proof_computations
+            )
 
-                # Keep the global simulation clock synchronized.
-                Node.simulation_time += winner_time
+            validation_time += (
+                proof_time
+            )
 
-                # Get the best TSP node found during the search.
-                winning_node = (
-                    self.node_list[0]
-                    .tsp
-                    .best_node
-                )
+            validation_valid = (
+                validation_valid
+                and proof_valid
+            )
 
-                # Calculate the total PoUW computational work.
-                pouw_computations = sum(
-                    node.computations
-                    for node in self.node_list
-                )
+        # ----------------------------------------------------------
+        # Council validation
+        # ----------------------------------------------------------
+        if self.validation_mode & COUNCIL_VALIDATION:
 
-                # Validation starts with zero cost.
-                validation_computations = 0
-                validation_time = 0.0
+            council = [
+                node
+                for node in self.node_list
+                if node is not finishing_node
+            ]
 
-                # --------------------------------------------------
-                # Proof validation
-                # --------------------------------------------------
+            (
+                council_result,
+                council_computations,
+                council_time
+            ) = council_validation(
+                self.node_list[0].tsp,
+                council,
+                self.node_list[0].tsp.best_path,
+                self.node_list[0].tsp.best_cost
+            )
 
-                if self.validation_mode & PROOF_VALIDATION:
+            validation_computations += (
+                council_computations
+            )
 
-                    validators = [
-                        node
-                        for node in self.node_list
-                        if node is not finishing_node
-                    ]
+            validation_time += (
+                council_time
+            )
 
-                    (
-                        proof_valid,
-                        proof_computations,
-                        proof_time
-                    ) = proof_based_validation(
-                        self.node_list[0].tsp,
-                        self.node_list[0].tsp.best_path,
-                        self.node_list[0].tsp.best_cost,
-                        Node.transcript,
-                        validators,
-                        self.transcript_sigma,
-                        self.transcript_root
-                    )
+            validation_valid = (
+                validation_valid
+                and council_result
+            )
 
-                    validation_computations += (
-                        proof_computations
-                    )
+        # ----------------------------------------------------------
+        # Current validation totals.
+        #
+        # We will later fix normalization of heterogeneous
+        # validation operations.
+        # ----------------------------------------------------------
+        total_computations = (
+            pouw_computations
+            + validation_computations
+        )
 
-                    validation_time += (
-                        proof_time
-                    )
+        total_time = (
+            pouw_time
+            + validation_time
+        )
 
-                    validation_valid = (
-                       validation_valid and proof_valid
-                    )
+        # Validation occurs after PoUW mining.
+        Node.simulation_time = total_time
 
-                # --------------------------------------------------
-                # Council validation
-                # --------------------------------------------------
+        # ----------------------------------------------------------
+        # Return results.
+        # ----------------------------------------------------------
+        return {
 
-                if self.validation_mode & COUNCIL_VALIDATION:
+            # -----------------------------
+            # PoUW only
+            # -----------------------------
+            "pouw_computations":
+                pouw_computations,
 
-                    council = [
-                        node
-                        for node in self.node_list
-                        if node is not finishing_node
-                    ]
+            "pouw_compute_work":
+                pouw_work,
 
-                    (
-                        council_result,
-                        council_computations,
-                        council_time
-                    ) = council_validation(
-                        self.node_list[0].tsp,
-                        council,
-                        self.node_list[0].tsp.best_path,
-                        self.node_list[0].tsp.best_cost
-                    )
+            "pouw_time":
+                pouw_time,
 
-                    validation_computations += (
-                        council_computations
-                    )
+            # -----------------------------
+            # Validation only
+            # -----------------------------
+            "validation_computations":
+                validation_computations,
 
-                    validation_time += (
-                        council_time
-                    )
+            "validation_time":
+                validation_time,
 
-                    validation_valid = (
-                       validation_valid and council_result
-                    )
+            "validation_valid":
+                validation_valid,
 
-                # --------------------------------------------------
-                # Final totals
-                # --------------------------------------------------
+            # -----------------------------
+            # PoUW + validation
+            # -----------------------------
+            "total_computations":
+                total_computations,
 
-                # Total computational work consists of:
-                #
-                #     PoUW work + validation work
-                #
-                total_computations = (
-                    pouw_computations
-                    + validation_computations
-                )
+            "total_time":
+                total_time,
 
-                # Total time consists of:
-                #
-                #     PoUW time + validation time
-                #
-                # PoUW time already includes transcript generation.
-                total_time = (
-                    pouw_time
-                    + validation_time
-                )
+            # Existing compatibility field.
+            "simulation_time":
+                total_time,
 
-                # Advance the global simulation clock by the
-                # validation time only.
-                Node.simulation_time += validation_time
+            # -----------------------------
+            # Winner
+            # -----------------------------
+            "winner": {
 
-                # Return the final simulation results.
-                return {
-                    # -----------------------------
-                    # PoUW only
-                    # -----------------------------
+                "name":
+                    finishing_node.name,
 
-                    "pouw_computations":
-                        pouw_computations,
+                "path":
+                    winning_node.path,
 
-                    "pouw_time":
-                        pouw_time,
+                "cost":
+                    winning_node.cost,
 
-                    # -----------------------------
-                    # Validation only
-                    # -----------------------------
+                "total_cost":
+                    winning_node.total_cost,
 
-                    "validation_computations":
-                        validation_computations,
+                "vertex":
+                    winning_node.vertex,
 
-                    "validation_time":
-                        validation_time,
+                "visited":
+                    winning_node.visited
+            },
 
-                    "validation_valid":
-                        validation_valid,
+            # -----------------------------
+            # Node information
+            # -----------------------------
+            "nodes": {
 
-                    # -----------------------------
-                    # PoUW + validation
-                    # -----------------------------
+                node.name: {
 
-                    "total_computations":
-                        total_computations,
+                    "hash_rate":
+                        node.hash_rate,
 
-                    "total_time":
-                        total_time,
+                    "search_rate":
+                        node.search_rate,
 
-                    # Keep simulation_time for compatibility
-                    # with existing code.
-                    "simulation_time":
-                        total_time,
+                    "computations":
+                        node.computations
 
-                    # -----------------------------
-                    # Winner
-                    # -----------------------------
-
-                    "winner": {
-                        "name":
-                            finishing_node.name,
-
-                        "path":
-                            winning_node.path,
-
-                        "cost":
-                            winning_node.cost,
-
-                        "total_cost":
-                            winning_node.total_cost,
-
-                        "vertex":
-                            winning_node.vertex,
-
-                        "visited":
-                            winning_node.visited
-                    },
-
-                    # -----------------------------
-                    # Node information
-                    # -----------------------------
-
-                    "nodes": {
-                        node.name: {
-                            "hash_rate":
-                                node.hash_rate,
-
-                            "search_rate":
-                                node.search_rate,
-
-                            "computations":
-                                node.computations
-                        }
-                        for node in self.node_list
-                    }
                 }
 
-            # ------------------------------------------------------
-            # Search has not finished.
-            # Advance the simulation by one full second plus
-            # the transcript generation time for this round.
-            # ------------------------------------------------------
-
-            round_transcript_time = max(
-                result[1]
-                for result in results
-            )
-
-            round_time = (
-                1
-                + round_transcript_time
-            )
-
-            pouw_time += round_time
-
-            Node.simulation_time += round_time
+                for node in self.node_list
+            }
+        }
 
 
     # Run all configured simulations and calculate their averages.
@@ -983,6 +1031,22 @@ class MainFunctions:
             / len(pouw_results)
         )
 
+        average_pow_compute_work = (
+            sum(
+                result["compute_work"]
+                for result in pow_results
+            )
+            / len(pow_results)
+        )
+
+        average_pouw_compute_work = (
+            sum(
+                result["pouw_compute_work"]
+                for result in pouw_results
+            )
+            / len(pouw_results)
+        )
+
         average_validation_computations = (
             sum(
                 result["validation_computations"]
@@ -1083,6 +1147,12 @@ class MainFunctions:
             "average_computations":
                 average_computations,
 
+            "average_pow_compute_work":
+                average_pow_compute_work,
+
+            "average_pouw_compute_work":
+                average_pouw_compute_work,
+
             "average_pow_simulation_time":
                 average_pow_simulation_time,
 
@@ -1157,8 +1227,8 @@ class MainFunctions:
         # Reset the simulated time to zero.
         Node.simulation_time = 0
 
-        if self.validation_mode & PROOF_VALIDATION:
-            Node.transcript = None
+        
+        Node.transcript = None
 
         # Recreate the nodes and generate a new TSP problem.
         # Benchmarks are not run again here.

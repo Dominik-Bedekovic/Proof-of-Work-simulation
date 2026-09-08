@@ -92,6 +92,9 @@ progress_label = None
 
 normal_geometry = None
 
+pow_compute_work_label = None
+pouw_compute_work_label = None
+
 
 
 # ============================================================
@@ -708,6 +711,14 @@ def display_results(data):
 
     average_computations = data["average_computations"]
 
+    average_pow_compute_work = (
+        data["average_pow_compute_work"]
+    )
+
+    average_pouw_compute_work = (
+        data["average_pouw_compute_work"]
+    )
+
     average_pow_simulation_time = (
 
         data["average_pow_simulation_time"]
@@ -718,6 +729,14 @@ def display_results(data):
 
         data["average_pouw_simulation_time"]
 
+    )
+
+    pow_compute_work_label.config(
+        text=f"{average_pow_compute_work:.4f} s"
+    )
+
+    pouw_compute_work_label.config(
+        text=f"{average_pouw_compute_work:.4f} s"
     )
 
     average_hashes_label.config(
@@ -1454,9 +1473,14 @@ def show_comparison_graph(data):
 
     # --------------------------------------------------------
 
-    average_hashes = data["average_hashes"]
+    average_pow_compute_work = (
+        data["average_pow_compute_work"]
+    )
 
-    average_computations = data["average_computations"]
+    average_pouw_compute_work = (
+        data["average_pouw_compute_work"]
+    )
+
 
     # --------------------------------------------------------
 
@@ -1480,14 +1504,29 @@ def show_comparison_graph(data):
 
         [
 
-            average_hashes,
-
-            average_computations
+            average_pow_compute_work,
+            average_pouw_compute_work
 
         ],
 
         "Computational Work"
 
+    )
+
+    create_comparison_graph(
+            
+        comparison_frame,
+
+        "PoW vs PoUW - Completion Time",
+        [
+            "PoW",
+            "PoUW"
+        ],
+        [
+            data["average_pow_simulation_time"],
+            data["average_pouw_simulation_time"]
+        ],
+        "Simulation Time [s]"
     )
 
     # --------------------------------------------------------
@@ -1737,6 +1776,10 @@ def start_gui():
     global progress_bar
 
     global progress_label
+
+    global pow_compute_work_label
+
+    global pouw_compute_work_label
 
     # ========================================================
 
@@ -2986,7 +3029,7 @@ def start_gui():
 
         pow_results_frame,
 
-        text="Total Hashes Performed:"
+        text="Average Hashes Performed:"
 
     ).grid(
 
@@ -3022,11 +3065,47 @@ def start_gui():
 
         pow_results_frame,
 
-        text="Simulation Time:"
+        text="Reference Compute Work:"
 
     ).grid(
 
         row=1,
+
+        column=0,
+
+        sticky="w"
+
+    )
+
+    pow_compute_work_label = ttk.Label(
+
+        pow_results_frame,
+
+        text="-"
+
+    )
+
+    pow_compute_work_label.grid(
+
+        row=1,
+
+        column=1,
+
+        sticky="e",
+
+        padx=20
+
+    )
+
+    ttk.Label(
+
+        pow_results_frame,
+
+        text="Simulation Time:"
+
+    ).grid(
+
+        row=2,
 
         column=0,
 
@@ -3044,7 +3123,7 @@ def start_gui():
 
     pow_simulation_time_label.grid(
 
-        row=1,
+        row=2,
 
         column=1,
 
@@ -3088,7 +3167,7 @@ def start_gui():
 
         pouw_results_frame,
 
-        text="Total Computations Performed:"
+        text="Average B&B Nodes Processed:"
 
     ).grid(
 
@@ -3124,11 +3203,47 @@ def start_gui():
 
         pouw_results_frame,
 
-        text="Simulation Time:"
+        text="Reference Compute Work:"
 
     ).grid(
 
         row=1,
+
+        column=0,
+
+        sticky="w"
+
+    )
+
+    pouw_compute_work_label = ttk.Label(
+
+        pouw_results_frame,
+
+        text="-"
+
+    )
+
+    pouw_compute_work_label.grid(
+
+        row=1,
+
+        column=1,
+
+        sticky="e",
+
+        padx=20
+
+    )
+
+    ttk.Label(
+
+        pouw_results_frame,
+
+        text="Simulation Time:"
+
+    ).grid(
+
+        row=2,
 
         column=0,
 
@@ -3146,7 +3261,7 @@ def start_gui():
 
     pouw_simulation_time_label.grid(
 
-        row=1,
+        row=2,
 
         column=1,
 

@@ -18,7 +18,7 @@ COUNCIL_VALIDATION = 0b10
 # PoW benchmark
 # =========================================================
 
-def benchmark_pow(duration=1.0):
+def benchmark_pow(duration=2.0):
 
     # Create a temporary node whose block data is used
     # as the input for the SHA-256 hashing benchmark.
@@ -62,42 +62,25 @@ def benchmark_pow(duration=1.0):
 # PoUW TSP benchmark
 # =========================================================
 
-def benchmark_tsp_pouw(duration=1.0, size=0):
+def benchmark_tsp_pouw(duration=2.0, size=0):
 
-    # Create a TSP instance used for the benchmark.
-    benchmark_tsp = TspData(size, True)
-
-    # Total number of B&B search computations performed.
     total_computations = 0
+    elapsed = 0.0
 
-    # Start measuring only the actual TSP solving process.
-    start = time.perf_counter()
+    while elapsed < duration:
 
-    # Repeatedly execute the TSP solver until the
-    # requested benchmark duration has passed.
-    while time.perf_counter() - start < duration:
+        benchmark_tsp = TspData(size, True)
 
-        # Solve the TSP instance using the Branch and Bound
-        # algorithm. The first returned value represents
-        # the number of computational operations performed.
-        computations, _, _, _ = TspFunction.tsp_solver(
-            benchmark_tsp,
-            1
+        start = time.perf_counter()
+
+        computations, _, _, finished = TspFunction.tsp_solver(
+            benchmark_tsp
         )
 
-        # Add the computations performed during this
-        # solver execution to the total.
+        elapsed += time.perf_counter() - start
         total_computations += computations
 
-    # Measure the actual elapsed benchmark time.
-    elapsed = time.perf_counter() - start
-
-    # Calculate the number of B&B computations
-    # that can be performed per second.
-    computation_rate = total_computations / elapsed
-
-    return computation_rate
-
+    return total_computations / elapsed
 
 # =========================================================
 # PoUW branch validation benchmark
@@ -405,3 +388,9 @@ def benchmark_bnb_validation(duration=1.0):
     return (
         computations / elapsed
     )
+
+if __name__ == "__main__":
+    print("0.5:", benchmark_tsp_pouw(0.5, 12))
+    print("1.0:", benchmark_tsp_pouw(1.0, 12))
+    print("2.0:", benchmark_tsp_pouw(2.0, 12))
+    print("5.0:", benchmark_tsp_pouw(5.0, 12))

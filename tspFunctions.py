@@ -327,7 +327,7 @@ class TspFunction():
     @staticmethod
     def tsp_solver(
         tsp: TspData,
-        search_rate,
+        search_rate=None,
         transcript=None,
         transcript_ratio=0
     ):
@@ -351,7 +351,7 @@ class TspFunction():
 
         # Process only a limited number of search nodes.
         # This simulates the search rate of an individual PoUW node.
-        for _ in range(search_rate):
+        while search_rate is None or computations < search_rate:
 
             # If no nodes remain, the complete search space has
             # been explored.
@@ -390,7 +390,7 @@ class TspFunction():
                     # Account for transcript-generation work.
                     if transcript_ratio > 0:
                         work += 1 / transcript_ratio
-                        time += 1 / transcript_ratio
+                        time += 1 / (transcript_ratio * search_rate)
 
                 continue
 
@@ -439,7 +439,7 @@ class TspFunction():
 
                     if transcript_ratio > 0:
                         work += 1 / transcript_ratio
-                        time += 1 / transcript_ratio
+                        time += 1 / (transcript_ratio * search_rate)
 
                 # Update the incumbent if this completed tour
                 # is better than the previous best solution.
@@ -553,6 +553,6 @@ class TspFunction():
                         child
                     )
 
-        # The search was not completed during this invocation.
-        # A later call can continue processing the same queue.
-        return computations, work, time, False
+        # The search is finished if processing this batch
+        # exhausted the priority queue.
+        return computations, work, time, not priority_queue

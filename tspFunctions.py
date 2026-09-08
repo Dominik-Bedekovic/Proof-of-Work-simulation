@@ -126,6 +126,13 @@ class TspFunction():
         # Copy the parent's reduced matrix.
         child.matrix = [row[:] for row in parent.matrix]
 
+        # Obtain the actual distance between the two cities from
+        # the original, non-reduced matrix.
+        actual_edge_cost = original_matrix[starting_city][destination_city]
+        reduced_edge_cost = parent.matrix[starting_city][destination_city]
+
+        child.path = parent.path + [destination_city]
+
         # Disable all outgoing connections from the starting city.
         for column in range(child.size):
             child.matrix[starting_city][column] = utils.inf
@@ -135,27 +142,21 @@ class TspFunction():
             child.matrix[row][destination_city] = utils.inf
 
         # Prevent the immediate return to the starting city.
-        child.matrix[destination_city][starting_city] = utils.inf
-
-        # Obtain the actual distance between the two cities from
-        # the original, non-reduced matrix.
-        edge_cost = original_matrix[starting_city][destination_city]
+        child.matrix[destination_city][0] = utils.inf
 
         # Reduce the new matrix and obtain the additional reduction cost.
-        child.matrix, reduction_cost = TspFunction._matrix_reduction(
-            child.matrix
-        )
+        child.matrix, reduction_cost = TspFunction._matrix_reduction(child.matrix)
 
         # Calculate the lower-bound cost used for branch pruning.
         child.cost = (
-            edge_cost
+            reduced_edge_cost
             + reduction_cost
             + parent.cost
         )
 
         # Calculate the actual cost of the path found so far.
         child.total_cost = (
-            edge_cost
+            actual_edge_cost
             + parent.total_cost
         )
 

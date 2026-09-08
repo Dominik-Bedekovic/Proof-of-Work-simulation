@@ -2218,7 +2218,7 @@ def start_gui():
 
         pouw_settings_frame,
 
-        from_=3,
+        from_=0,
 
         to=15,
 

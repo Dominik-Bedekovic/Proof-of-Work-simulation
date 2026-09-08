@@ -466,6 +466,10 @@ class MainFunctions:
                     ]
                 )
 
+                print("TSP Matrix", Node.tsp.matrix)
+                print("Best TSP path:", Node.tsp.best_path)
+                print("Best TSP cost:", Node.tsp.best_cost)
+
                 finishing_node_computations = (
                     results[
                         finishing_node_index

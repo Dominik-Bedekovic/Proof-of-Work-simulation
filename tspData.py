@@ -25,6 +25,15 @@ class TspData:
                 [10, 30, 10, 30, 200, 140, 20, 50, 60, utils.inf, 30],
                 [400, 670, 700, 20, 600, 10, 50, 40, 70, 30, utils.inf]
             ]
+        elif size == 0:
+            print("Test matrix")
+            self.matrix = [
+                [utils.inf, 250, 700,  40, 840],
+                [250, utils.inf, 120, 790, 640],
+                [700, 120, utils.inf,  60,  40],
+                [40,  790,  60, utils.inf, 600],
+                [840, 640,  40, 600, utils.inf]
+            ] 
         else:
             # Generate the distance matrix representing the complete graph.
             self.matrix = TspFunction._make_tsp_matrix(size)

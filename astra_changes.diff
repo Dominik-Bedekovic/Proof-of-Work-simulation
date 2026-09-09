@@ -1,0 +1,2527 @@
+diff --git a/MODEL_NOTES.md b/MODEL_NOTES.md
+new file mode 100644
+index 0000000..a0c4ca0
+--- /dev/null
++++ b/MODEL_NOTES.md
+@@ -0,0 +1,92 @@
++# Corrected simulation model and thesis notes
++
++This version addresses the six findings from the 9 September 2026 review. Rerun calibration and regenerate affected thesis figures; old numeric results are not comparable to the corrected scheduling/accounting.
++
++## Validation
++
++Proof and council validation share `_validate_proposed_tour`. It requires integer (not Boolean or float) city indices, a Hamiltonian cycle starting/ending at city 0, finite original edge costs, and a finite numeric claimed cost equal to the independently calculated edge sum.
++
++Semantic replay also applies this guard, then reconstructs search states, reductions, incumbent changes, pruning and the exhausted frontier. The reconstructed optimum must equal the submitted cost. **Alternative tours with exactly the same optimum cost are allowed**; the submitted route need not be the same orientation as the transcript's winning route.
++
++Parallel tasks may finish in a different order from their dispatch priority. Replay therefore permits any generated open node to complete, while preserving every structural, bound, pruning, incumbent and completeness check. It verifies the search certificate, not dispatch priority, worker identities, elapsed time or physically performed work. The old order test is now named `test_invalid_incumbent_history`: the specific shuffled records remain invalid because of incumbent-history inconsistencies. Other sound completion orders are intentionally accepted.
++
++This remains full B&B semantic replay, not zero knowledge, a succinct proof, or proof that a miner freshly expended a particular amount of physical computation. Rehashing a known trace for the same TSP under a different sigma is still possible. The matrix/root is trusted input provided by the simulator. No adversarial network/consensus security claim is made.
++
++## Causal search scheduling
++
++`scheduler.run_search` models cooperative workers sharing a central ready queue and incumbent:
++
++1. At time zero, only the root is ready. Idle workers reserve available minimum-bound tasks in worker-index order; workers without tasks stay idle.
++2. One reserved B&B node takes `1 / worker.search_rate` simulated seconds. No search effect is applied at dispatch.
++3. At search completion, the reserved node is processed using the then-current incumbent. Children and improved incumbents become visible at this timestamp. No other worker can process the reserved task.
++4. Search-completion events at exactly equal timestamps are processed in worker-index order. All events already scheduled at that timestamp are processed before new dispatches. Floating-point event times are compared as stored; no arbitrary near-tie tolerance is applied.
++5. In proof mode, logical transcript records are appended in search-completion order. Their modeled hash/append service is serialized in the same order, since each record needs the previous hash. A record batch starts at the later of search completion and the previous append batch's finish, and takes `records / worker.transcript_rate`. Its producing worker remains occupied while waiting and appending. Other workers may search using the already completed search effects.
++6. A worker becomes idle after its logging service, or immediately at search completion if no logging is needed. There is no prepayment of search time while idle.
++7. An empty ready queue is insufficient for termination: all reserved searches and queued/in-progress append service must finish. No dispatched work is canceled or credited fractionally. Validation starts only after this drain.
++
++The simulator executes these state transitions sequentially in Python; event times model parallel resources, not wall-clock execution. Building the logical record immediately at search completion is a simulation bookkeeping action: modeled hash availability is represented by the serial append finish times. Workers cannot obtain their next task until their append finishes, and validation cannot read an unfinished certificate.
++
++A three-task dependency chain with one-second tasks takes three seconds even with three workers. A final task with one second of search plus two seconds of append work takes three seconds. Two child tasks completing at time 2 with five seconds and one second of ordered append service finish logging at times 7 and 8 respectively.
++
++The worker discovering the final best tour and the worker finishing the overall search/logging phase are reported separately. The former is used in the solution's `winner.name`; this is attribution in a cooperative model, not a consensus reward rule.
++
++## Work units and boundaries
++
++Every run retains separate counters and normalized components:
++
++| Component | Raw field | Calibration |
++|---|---|---|
++| B&B search | `pouw_computations` | `computations_per_second` |
++| Transcript record append | `transcript_records` | `transcript_per_second` |
++| Hash-chain checking | `proof_hash_checks` | `hash_validation_per_second` |
++| Semantic replay/setup | `proof_semantic_checks` | `semantic_validation_per_second` |
++| Council tour validation | `council_initial_validations` | `initial_validations_per_second` |
++| Council branch validation | `council_branch_validation_nodes` | `branch_validation_nodes_per_second` |
++
++For the selected components, aggregate reference compute work is `sum(count / measured_rate)`. Waiting and parallel overlap change simulated elapsed time, not this aggregate work sum. `pouw_compute_work` includes search plus transcript append work; `total_compute_work` adds validation. `total_computations` is retained for compatibility but is **B&B-equivalent work**, not a raw heterogeneous operation count. Do not add it to the raw component counters.
++
++The “Search + transcript generation” graph component is the proof-mode search phase, including append service and waiting. It is not a separately measured no-transcript baseline.
++
++The model deliberately excludes TSP-instance setup, initial matrix reduction/root creation, construction of the root-children commitment and its initial hash, and mining record-dictionary construction from simulated mining work/time. The record benchmark measures `Transcript.add_step` on preconstructed dictionaries: serialization/hashing, list append and path indexing are the modeled transcript-generation component. Dictionary construction and initialization are therefore **not** claimed to be fully measured overhead. Semantic validation calibration includes its submitted-tour, root and replay checks; its units are a calibrated composite proxy.
++
++Benchmark rates remain averages from a deterministic instance of the selected size. They do not make every B&B node or semantic record equally expensive in reality. State these limits and consider sensitivity/variance across representative matrices. Reference compute seconds are not measured energy in joules. Wall-clock timing also includes Python overhead, multiprocessing, printing, calibration and setup.
++
++## PoW cutoff
++
++Within the final one-second interval, select the success with minimum exact rational `hashes / hash_rate`; worker index breaks equal-time ties. For every worker, count `floor(rate * cutoff)` completed hashes. Each worker's next-attempt nonce/extra-nonce/Merkle state is advanced only to that cutoff, including wraparound. The winner payload separately retains the actual successful nonce.
++
++Speculative hashes physically executed by the simulator beyond the modeled cutoff are not counted as simulated network work. This is distinct from runtime profiling.
++
++## GUI solution fields
++
++The displayed route is `Node.tsp.best_path`, including the final 0. The displayed tour cost is `Node.tsp.best_cost`, including the return edge. The search-node lower bound is explicitly labelled; the partial-path cost remains a separate diagnostic payload field. The end vertex is 0 and the visited-city count is the number of cities.
++
++## Running and testing
++
++Install dependencies and launch as before:
++
++```sh
++python -m pip install -r requirements.txt
++python main.py
++```
++
++Run the supplied adversarial tests and new assertion-based regressions:
++
++```sh
++python proof_validation_tests.py
++python -m unittest -v test_regressions
++```
++
++Optional spawn-mode integration (also works on Linux to exercise Windows-style process startup):
++
++```sh
++python test_regressions.py --spawn Regressions.test_repeat_modes_accounting_and_payload Regressions.test_parallel_transcripts_and_optima
++```
++
++Optional end-to-end run with normal two-second-target calibration:
++
++```sh
++python calibration_smoke.py
++```
++
++See `TEST_RESULTS.md`. These tests validate the stated simulation model and regressions; they are not a guarantee for arbitrary malformed certificate objects, sparse/disconnected graphs, every floating-point workload or a real distributed deployment. The supported experiment domain remains complete symmetric integer TSP matrices generated by the project. The thesis itself and native Windows GUI still need review on the submission machine.
+diff --git a/README.md b/README.md
+index c39aee2..92fad20 100644
+--- a/README.md
++++ b/README.md
+@@ -127,3 +127,16 @@ Datoteka `timing.txt` služi za evidenciju vremena izvođenja pojedinih pokretan
+ Nakon svakog pokretanja programa u datoteku se zapisuje vremenski zapis izvršavanja simulacije. Novi rezultati dodaju se u postojeću datoteku, čime se omogućuje pregled vremena izvođenja kroz više uzastopnih pokretanja programa.
+ 
+ Datoteka `timing.txt` može se koristiti za praćenje i usporedbu trajanja pojedinih pokretanja simulacije pri različitim konfiguracijskim parametrima.
++
++## Ispravci modela i testovi (9. 9. 2026.)
++
++Detalji ispravljenog raspoređivanja, validacije i jedinica rada nalaze se u `MODEL_NOTES.md`. Prije korištenja rezultata u završnom radu potrebno je ponovno pokrenuti mjerenja i obnoviti grafikone.
++
++Regresijski testovi:
++
++```sh
++python proof_validation_tests.py
++python -m unittest -v test_regressions
++```
++
++Sažetak provedene provjere nalazi se u `TEST_RESULTS.md`.
+diff --git a/SOURCE_CHANGES.patch b/SOURCE_CHANGES.patch
+new file mode 100644
+index 0000000..4e83c48
+--- /dev/null
++++ b/SOURCE_CHANGES.patch
+@@ -0,0 +1,1136 @@
++--- original/MODEL_NOTES.md
+++++ corrected/MODEL_NOTES.md
++@@ -0,0 +1,92 @@
+++# Corrected simulation model and thesis notes
+++
+++This version addresses the six findings from the 9 September 2026 review. Rerun calibration and regenerate affected thesis figures; old numeric results are not comparable to the corrected scheduling/accounting.
+++
+++## Validation
+++
+++Proof and council validation share `_validate_proposed_tour`. It requires integer (not Boolean or float) city indices, a Hamiltonian cycle starting/ending at city 0, finite original edge costs, and a finite numeric claimed cost equal to the independently calculated edge sum.
+++
+++Semantic replay also applies this guard, then reconstructs search states, reductions, incumbent changes, pruning and the exhausted frontier. The reconstructed optimum must equal the submitted cost. **Alternative tours with exactly the same optimum cost are allowed**; the submitted route need not be the same orientation as the transcript's winning route.
+++
+++Parallel tasks may finish in a different order from their dispatch priority. Replay therefore permits any generated open node to complete, while preserving every structural, bound, pruning, incumbent and completeness check. It verifies the search certificate, not dispatch priority, worker identities, elapsed time or physically performed work. The old order test is now named `test_invalid_incumbent_history`: the specific shuffled records remain invalid because of incumbent-history inconsistencies. Other sound completion orders are intentionally accepted.
+++
+++This remains full B&B semantic replay, not zero knowledge, a succinct proof, or proof that a miner freshly expended a particular amount of physical computation. Rehashing a known trace for the same TSP under a different sigma is still possible. The matrix/root is trusted input provided by the simulator. No adversarial network/consensus security claim is made.
+++
+++## Causal search scheduling
+++
+++`scheduler.run_search` models cooperative workers sharing a central ready queue and incumbent:
+++
+++1. At time zero, only the root is ready. Idle workers reserve available minimum-bound tasks in worker-index order; workers without tasks stay idle.
+++2. One reserved B&B node takes `1 / worker.search_rate` simulated seconds. No search effect is applied at dispatch.
+++3. At search completion, the reserved node is processed using the then-current incumbent. Children and improved incumbents become visible at this timestamp. No other worker can process the reserved task.
+++4. Search-completion events at exactly equal timestamps are processed in worker-index order. All events already scheduled at that timestamp are processed before new dispatches. Floating-point event times are compared as stored; no arbitrary near-tie tolerance is applied.
+++5. In proof mode, logical transcript records are appended in search-completion order. Their modeled hash/append service is serialized in the same order, since each record needs the previous hash. A record batch starts at the later of search completion and the previous append batch's finish, and takes `records / worker.transcript_rate`. Its producing worker remains occupied while waiting and appending. Other workers may search using the already completed search effects.
+++6. A worker becomes idle after its logging service, or immediately at search completion if no logging is needed. There is no prepayment of search time while idle.
+++7. An empty ready queue is insufficient for termination: all reserved searches and queued/in-progress append service must finish. No dispatched work is canceled or credited fractionally. Validation starts only after this drain.
+++
+++The simulator executes these state transitions sequentially in Python; event times model parallel resources, not wall-clock execution. Building the logical record immediately at search completion is a simulation bookkeeping action: modeled hash availability is represented by the serial append finish times. Workers cannot obtain their next task until their append finishes, and validation cannot read an unfinished certificate.
+++
+++A three-task dependency chain with one-second tasks takes three seconds even with three workers. A final task with one second of search plus two seconds of append work takes three seconds. Two child tasks completing at time 2 with five seconds and one second of ordered append service finish logging at times 7 and 8 respectively.
+++
+++The worker discovering the final best tour and the worker finishing the overall search/logging phase are reported separately. The former is used in the solution's `winner.name`; this is attribution in a cooperative model, not a consensus reward rule.
+++
+++## Work units and boundaries
+++
+++Every run retains separate counters and normalized components:
+++
+++| Component | Raw field | Calibration |
+++|---|---|---|
+++| B&B search | `pouw_computations` | `computations_per_second` |
+++| Transcript record append | `transcript_records` | `transcript_per_second` |
+++| Hash-chain checking | `proof_hash_checks` | `hash_validation_per_second` |
+++| Semantic replay/setup | `proof_semantic_checks` | `semantic_validation_per_second` |
+++| Council tour validation | `council_initial_validations` | `initial_validations_per_second` |
+++| Council branch validation | `council_branch_validation_nodes` | `branch_validation_nodes_per_second` |
+++
+++For the selected components, aggregate reference compute work is `sum(count / measured_rate)`. Waiting and parallel overlap change simulated elapsed time, not this aggregate work sum. `pouw_compute_work` includes search plus transcript append work; `total_compute_work` adds validation. `total_computations` is retained for compatibility but is **B&B-equivalent work**, not a raw heterogeneous operation count. Do not add it to the raw component counters.
+++
+++The “Search + transcript generation” graph component is the proof-mode search phase, including append service and waiting. It is not a separately measured no-transcript baseline.
+++
+++The model deliberately excludes TSP-instance setup, initial matrix reduction/root creation, construction of the root-children commitment and its initial hash, and mining record-dictionary construction from simulated mining work/time. The record benchmark measures `Transcript.add_step` on preconstructed dictionaries: serialization/hashing, list append and path indexing are the modeled transcript-generation component. Dictionary construction and initialization are therefore **not** claimed to be fully measured overhead. Semantic validation calibration includes its submitted-tour, root and replay checks; its units are a calibrated composite proxy.
+++
+++Benchmark rates remain averages from a deterministic instance of the selected size. They do not make every B&B node or semantic record equally expensive in reality. State these limits and consider sensitivity/variance across representative matrices. Reference compute seconds are not measured energy in joules. Wall-clock timing also includes Python overhead, multiprocessing, printing, calibration and setup.
+++
+++## PoW cutoff
+++
+++Within the final one-second interval, select the success with minimum exact rational `hashes / hash_rate`; worker index breaks equal-time ties. For every worker, count `floor(rate * cutoff)` completed hashes. Each worker's next-attempt nonce/extra-nonce/Merkle state is advanced only to that cutoff, including wraparound. The winner payload separately retains the actual successful nonce.
+++
+++Speculative hashes physically executed by the simulator beyond the modeled cutoff are not counted as simulated network work. This is distinct from runtime profiling.
+++
+++## GUI solution fields
+++
+++The displayed route is `Node.tsp.best_path`, including the final 0. The displayed tour cost is `Node.tsp.best_cost`, including the return edge. The search-node lower bound is explicitly labelled; the partial-path cost remains a separate diagnostic payload field. The end vertex is 0 and the visited-city count is the number of cities.
+++
+++## Running and testing
+++
+++Install dependencies and launch as before:
+++
+++```sh
+++python -m pip install -r requirements.txt
+++python main.py
+++```
+++
+++Run the supplied adversarial tests and new assertion-based regressions:
+++
+++```sh
+++python proof_validation_tests.py
+++python -m unittest -v test_regressions
+++```
+++
+++Optional spawn-mode integration (also works on Linux to exercise Windows-style process startup):
+++
+++```sh
+++python test_regressions.py --spawn Regressions.test_repeat_modes_accounting_and_payload Regressions.test_parallel_transcripts_and_optima
+++```
+++
+++Optional end-to-end run with normal two-second-target calibration:
+++
+++```sh
+++python calibration_smoke.py
+++```
+++
+++See `TEST_RESULTS.md`. These tests validate the stated simulation model and regressions; they are not a guarantee for arbitrary malformed certificate objects, sparse/disconnected graphs, every floating-point workload or a real distributed deployment. The supported experiment domain remains complete symmetric integer TSP matrices generated by the project. The thesis itself and native Windows GUI still need review on the submission machine.
++--- original/README.md
+++++ corrected/README.md
++@@ -127,3 +127,16 @@
++ Nakon svakog pokretanja programa u datoteku se zapisuje vremenski zapis izvršavanja simulacije. Novi rezultati dodaju se u postojeću datoteku, čime se omogućuje pregled vremena izvođenja kroz više uzastopnih pokretanja programa.
++ 
++ Datoteka `timing.txt` može se koristiti za praćenje i usporedbu trajanja pojedinih pokretanja simulacije pri različitim konfiguracijskim parametrima.
+++
+++## Ispravci modela i testovi (9. 9. 2026.)
+++
+++Detalji ispravljenog raspoređivanja, validacije i jedinica rada nalaze se u `MODEL_NOTES.md`. Prije korištenja rezultata u završnom radu potrebno je ponovno pokrenuti mjerenja i obnoviti grafikone.
+++
+++Regresijski testovi:
+++
+++```sh
+++python proof_validation_tests.py
+++python -m unittest -v test_regressions
+++```
+++
+++Sažetak provedene provjere nalazi se u `TEST_RESULTS.md`.
++--- original/TEST_RESULTS.md
+++++ corrected/TEST_RESULTS.md
++@@ -0,0 +1,33 @@
+++# Verification results — 9 September 2026
+++
+++Environment: Linux, Python 3.12.14. No native Windows GUI/display test was performed.
+++
+++| Check | Outcome |
+++|---|---|
+++| `python proof_validation_tests.py` | 10/10 expected decisions; fixture now includes its required name |
+++| `python -m unittest -v test_regressions` | All 18 test methods passed |
+++| Exhaustive solver oracle within regressions | 600 complete symmetric integer instances, sizes 3–8, all optimal costs matched |
+++| Parallel scheduler + replay within regressions | 30 instances, sizes 5–7, heterogeneous worker rates; all optima matched enumeration and transcripts validated; nonminimum-bound completion order was exercised |
+++| Original five-city attack | 1870-cost path with claimed cost 1030 rejected |
+++| Seven-city attack | 2587-cost path with claimed cost 1813 rejected |
+++| Alternative optimum tour | Reversed symmetric optimum accepted |
+++| Invalid inputs | Invalid city types/indices/structure, nonfinite/nonnumeric costs and missing tour edges rejected |
+++| Dependency chain | Three one-second dependent tasks finish at 3 seconds |
+++| Final transcript work | One search second plus two append seconds finishes at 3 seconds |
+++| Outstanding append batches | Two children finishing at time 2 with five- and one-second ordered append batches drain at time 8 |
+++| PoW cutoff | 0.1-second success wins over 0.9-second success; exact floor counts, equal-time ties, cursors and nonce wrap checked |
+++| Complete solution payload | Original example reports closed optimal path and tour cost 1030 |
+++| Repeated integration | Two invocations per validation mode, two repetitions per algorithm per invocation; accounting components and reset state checked |
+++| Rejected proposals | Invalid result raises before averaging |
+++| Component calibration smoke | All six TSP/validation/append calibrators ran successfully |
+++| `spawn` integration | Both selected integration test methods passed, including 30 parallel proofs and repeated runs across modes |
+++| Normal calibration integration | Five workers, seven cities, difficulty 2, proof mode; default two-second-target benchmarks and full simulation passed |
+++| Compilation | All Python files compiled successfully |
+++
+++The integration suite uses fixed synthetic rates to make accounting assertions reproducible. Benchmark smoke tests execute measured calibration, and `calibration_smoke.py` separately uses normal calibration. Controlled scheduler/PoW tests mock task results to create exact counterexamples; real scheduler, proof and council multiprocessing integration is also covered.
+++
+++Normal-calibration example (random workload, not a recommended thesis result): 63 B&B nodes, 108 transcript records, search work 0.000869482 reference seconds, append work 0.000261795 reference seconds, validation work 0.001255326 reference seconds, total work 0.002386604 reference seconds. Simulated search-plus-append time was 0.864443 seconds and total time 2.584821 seconds. Values will differ on another run/machine.
+++
+++Raw logs are in `test-results/`. `SOURCE_CHANGES.patch` compares revised source/document files with the reviewed upload. The entire updated project is included; no patch application is required.
+++
+++These results address the six specified regressions within the documented educational model. Regenerate thesis experiments, update the algorithm/metric descriptions from `MODEL_NOTES.md`, and check the graphical interface on the submission machine. Spawn-mode success on Linux does not constitute native Windows/Python 3.13 GUI verification.
++--- original/benchmark.py
+++++ corrected/benchmark.py
++@@ -467,10 +467,10 @@
++ 
++         hamiltonian_valid = (
++             validation
++-            ._validate_hamiltonian_cycle(
+++            ._validate_proposed_tour(
++                 tsp,
++                 proposed_path,
++-                debug=False
+++                proposed_cost
++             )
++         )
++ 
++--- original/calibration_smoke.py
+++++ corrected/calibration_smoke.py
++@@ -0,0 +1,14 @@
+++"""Optional real-calibration integration smoke test (~10 seconds)."""
+++import json
+++from mainFunctions import MainFunctions
+++if __name__ == '__main__':
+++    MainFunctions.benchmarks_done=False
+++    simulation=MainFunctions(5,7,1,2,1)
+++    result=simulation.run_simulation()
+++    run=result['pouw']['runs'][0]
+++    assert run['validation_valid']
+++    assert run['winner']['path'][0]==run['winner']['path'][-1]==0
+++    assert run['transcript_records']>0
+++    assert run['transcript_compute_work']>0
+++    print('CALIBRATION SMOKE PASS')
+++    print(json.dumps({k:run[k] for k in ('pouw_computations','transcript_records','search_compute_work','transcript_compute_work','validation_compute_work','total_compute_work','pouw_time','total_time')},indent=2))
++--- original/gui.py
+++++ corrected/gui.py
++@@ -1309,9 +1309,8 @@
++ 
++             text=(
++ 
++-                f"Winning TSP node: "
++-
++-                f"{winner['name']}"
+++                f"Best-tour discoverer: {winner['name']} | "
+++                f"Finishing worker: {run['finishing_node']}"
++ 
++             )
++ 
++@@ -1357,9 +1356,9 @@
++ 
++             text=(
++ 
++-                f"Cost: "
++-
++-                f"{winner['cost']}"
+++                f"Search-node lower bound: "
+++
+++                f"{winner['lower_bound']}"
++ 
++             )
++ 
++@@ -1381,7 +1380,7 @@
++ 
++             text=(
++ 
++-                f"Total cost: "
+++                f"Tour cost (including return): "
++ 
++                 f"{winner['total_cost']}"
++ 
++@@ -1624,7 +1623,7 @@
++         "PoUW Validation Work Breakdown",
++ 
++         [
++-            "Base PoUW",
+++            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
++             "Validation",
++             validation_name
++         ],
++@@ -1650,7 +1649,7 @@
++         "PoUW Validation Time Breakdown",
++ 
++         [
++-            "Base PoUW",
+++            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
++             "Validation",
++             validation_name
++         ],
++--- original/mainFunctions.py
+++++ corrected/mainFunctions.py
++@@ -10,6 +10,8 @@
++ from validation import council_validation
++ from validation import proof_based_validation
++ import heapq
+++from fractions import Fraction
+++from scheduler import run_search
++ 
++ # Validation modes
++ NO_VALIDATION = 0b00
++@@ -428,6 +430,7 @@
++             self.num_of_cities
++         )
++ 
+++        Node.transcript = None
++         # Create the shared transcript when proof validation is enabled.
++         if self.validation_mode & PROOF_VALIDATION:
++ 
++@@ -539,21 +542,6 @@
++                     arguments
++                 )
++ 
++-                # Update nodes that did not find a valid hash
++-                # during the current mining interval.
++-                for node, result in zip(
++-                    self.node_list,
++-                    results
++-                ):
++-                    if not result["found"]:
++-                        node.nonce = result["nonce"]
++-                        node.coinbase["extra_nonce"] = (
++-                            result["extra_nonce"]
++-                        )
++-                        node.merkle_root = (
++-                            result["merkle_root"]
++-                        )
++-
++                 # Find all nodes that found a valid hash
++                 # during the current mining interval.
++                 successful_nodes = [
++@@ -565,14 +553,18 @@
++                 # If no node found a valid hash, one simulated
++                 # second of mining has elapsed.
++                 if not successful_nodes:
++-                    for node in self.node_list:
++-                        node.mining_count += node.hash_rate
+++                    for node, result in zip(self.node_list, results):
+++                        node.update_pow_state(result)
++ 
++                     Node.simulation_time += 1
++                     continue
++ 
++-                # Select the first node that found a valid hash.
++-                winner_index, winner = successful_nodes[0]
+++                # Earliest exact rational completion time; list index breaks ties.
+++                winner_index, winner = min(
+++                    successful_nodes,
+++                    key=lambda item: (Fraction(item[1]["hashes"],
+++                                               self.node_list[item[0]].hash_rate), item[0])
+++                )
++ 
++                 finishing_node = (
++                     self.node_list[winner_index]
++@@ -584,37 +576,17 @@
++ 
++                 # Calculate the fraction of a second needed
++                 # by the winner to find the valid hash.
++-                winner_time = (
++-                    hashes
++-                    / finishing_node.hash_rate
++-                )
++-
++-                # Calculate how much work every node performed
++-                # during the final fraction of the simulated second.
+++                cutoff = Fraction(hashes, finishing_node.hash_rate)
+++                winner_time = float(cutoff)
+++
+++                # Count completed hashes, never rounded partial attempts.
+++                # Reconstruct each node's next nonce at exactly this cutoff.
++                 for node in self.node_list:
++-                    work_done = round(
++-                        node.hash_rate
++-                        * winner_time
++-                    )
++-
+++                    work_done = (node.hash_rate * cutoff.numerator) // cutoff.denominator
++                     node.mining_count += work_done
++-
++-                # Save the winning mining state.
++-                finishing_node.nonce = (
++-                    winner["nonce"]
++-                )
++-
++-                finishing_node.coinbase["extra_nonce"] = (
++-                    winner["extra_nonce"]
++-                )
++-
++-                finishing_node.merkle_root = (
++-                    winner["merkle_root"]
++-                )
++-
++-                finishing_node.header_hash = (
++-                    winner["header_hash"]
++-                )
+++                    powWorker.advance_state(node, work_done)
+++
+++                finishing_node.header_hash = winner["header_hash"]
++ 
++                 # Advance the simulation time by the fraction
++                 # of a second required to find the winning hash.
++@@ -724,124 +696,16 @@
++         council_branch_compute_work = 0.0
++         council_compute_work = 0.0
++ 
++-        # ==========================================================
++-        # EVENT-DRIVEN POUW SCHEDULER
++-        # ==========================================================
++-
++-        event_queue = []
++-
++-        for index, node in enumerate(self.node_list):
++-
++-            if node.search_rate > 0:
++-
++-                first_event_time = (
++-                    1.0 / node.search_rate
++-                )
++-
++-                heapq.heappush(
++-                    event_queue,
++-                    (
++-                        first_event_time,
++-                        index,
++-                        node
++-                    )
++-                )
++-
++-        finishing_node = None
++-
++-        # ----------------------------------------------------------
++-        # Process events in simulated completion-time order
++-        # ----------------------------------------------------------
++-
++-        while event_queue:
++-
++-            (
++-                event_time,
++-                node_index,
++-                node
++-            ) = heapq.heappop(
++-                event_queue
++-            )
++-
++-            pouw_time = event_time
++-
++-            Node.simulation_time = (
++-                event_time
++-            )
++-
++-            (
++-                computations,
++-                work,
++-                _,
++-                finished
++-            ) = TspFunction.tsp_solver(
++-                Node.tsp,
++-                1,
++-                Node.transcript,
++-                Node.transcript_pouw_ratio
++-            )
++-
++-            # Raw B&B nodes processed.
++-            node.computations += (
++-                computations
++-            )
++-
++-            # Computational work.
++-            #
++-            # In Proof mode this may additionally contain
++-            # transcript-generation overhead.
++-            node.work += work
++-
++-            # ------------------------------------------------------
++-            # Search completed
++-            # ------------------------------------------------------
++-
++-            if finished:
++-
++-                Node.found = True
++-                finishing_node = node
++-
++-                break
++-
++-            # ------------------------------------------------------
++-            # Schedule next operation
++-            # ------------------------------------------------------
++-
++-            transcript_equivalent_work = max(
++-                0.0,
++-                work - computations
++-            )
++-
++-            transcript_delay = (
++-                transcript_equivalent_work
++-                / node.search_rate
++-            )
++-
++-            next_event_time = (
++-                event_time
++-                + transcript_delay
++-                + (1.0 / node.search_rate)
++-            )
++-
++-            heapq.heappush(
++-                event_queue,
++-                (
++-                    next_event_time,
++-                    node_index,
++-                    node
++-                )
++-            )
++-
++-        # ----------------------------------------------------------
++-        # Safety check
++-        # ----------------------------------------------------------
++-
++-        if finishing_node is None:
++-
++-            raise RuntimeError(
++-                "PoUW event queue became empty "
++-                "before TSP completion."
++-            )
+++        search_result = run_search(
+++            Node.tsp, self.node_list, Node.transcript,
+++            Node.transcript_pouw_ratio
+++        )
+++        pouw_time = search_result["time"]
+++        finishing_node = search_result["finishing_node"]
+++        discovering_node = search_result["discovering_node"]
+++        transcript_records = search_result["transcript_records"]
+++        Node.found = True
+++        Node.simulation_time = pouw_time
++ 
++         # ----------------------------------------------------------
++         # Display TSP result
++@@ -882,7 +746,7 @@
++         )
++ 
++         # ----------------------------------------------------------
++-        # PoUW reference-machine compute work
+++        # Search + transcript reference-machine compute work
++         # ----------------------------------------------------------
++         #
++         # B&B nodes
++@@ -892,10 +756,16 @@
++         # = reference seconds
++         # ----------------------------------------------------------
++ 
++-        pouw_compute_work = (
++-            pouw_computations
++-            / MainFunctions.computations_per_second
++-        )
+++        search_compute_work = (
+++            pouw_computations / MainFunctions.computations_per_second
+++        )
+++        transcript_compute_work = (
+++            transcript_records / MainFunctions.transcript_per_second
+++            if transcript_records else 0.0
+++        )
+++        pouw_compute_work = search_compute_work + transcript_compute_work
+++        proof_hash_checks = proof_semantic_checks = 0
+++        proof_hash_compute_work = proof_semantic_compute_work = 0.0
++ 
++         # ----------------------------------------------------------
++         # Diagnostics
++@@ -937,9 +807,7 @@
++         # PROOF VALIDATION
++         # ==========================================================
++         #
++-        # Temporary old accounting.
++-        # We will normalize this separately when Proof Validation
++-        # is redesigned/fixed.
+++        # Hash checks and semantic units use separate measured rates.
++         # ==========================================================
++ 
++         if self.validation_mode & PROOF_VALIDATION:
++@@ -969,6 +837,8 @@
++                 proof_result["validation_time"]
++             )
++ 
+++            proof_hash_checks = proof_result["hash_checks"]
+++            proof_semantic_checks = proof_result["semantic_checks"]
++             proof_hash_compute_work = (
++                 proof_result["hash_checks"]
++                 / MainFunctions.hash_validation_per_second
++@@ -1243,7 +1113,7 @@
++         # ----------------------------------------------------------
++ 
++         total_computations = (
++-            pouw_computations
+++            pouw_compute_work * MainFunctions.computations_per_second
++             + validation_computations
++         )
++ 
++@@ -1281,6 +1151,16 @@
++ 
++             "pouw_computations":
++                 pouw_computations,
+++            "search_compute_work": search_compute_work,
+++            "transcript_records": transcript_records,
+++            "transcript_compute_work": transcript_compute_work,
+++            "proof_hash_checks": proof_hash_checks,
+++            "proof_semantic_checks": proof_semantic_checks,
+++            "proof_hash_compute_work": proof_hash_compute_work,
+++            "proof_semantic_compute_work": proof_semantic_compute_work,
+++            "finishing_node": finishing_node.name,
+++            "discovering_node": discovering_node.name,
+++
++ 
++             "pouw_compute_work":
++                 pouw_compute_work,
++@@ -1310,7 +1190,7 @@
++             # Validated PoUW
++             # ------------------------------------------------------
++ 
++-            # PoUW B&B nodes + equivalent validation computations.
+++            # B&B-equivalent search, transcript and validation work.
++             "total_computations":
++                 total_computations,
++ 
++@@ -1349,22 +1229,24 @@
++             "winner": {
++ 
++                 "name":
++-                    finishing_node.name,
+++                    discovering_node.name,
++ 
++                 "path":
++-                    winning_node.path,
+++                    Node.tsp.best_path[:],
++ 
++                 "cost":
++-                    winning_node.cost,
+++                    Node.tsp.best_cost,
++ 
++                 "total_cost":
++-                    winning_node.total_cost,
+++                    Node.tsp.best_cost,
++ 
++                 "vertex":
++-                    winning_node.vertex,
+++                    Node.tsp.best_path[-1],
++ 
++                 "visited":
++-                    winning_node.visited
+++                    Node.tsp.size,
+++                "lower_bound": winning_node.cost,
+++                "partial_path_cost": winning_node.total_cost
++             },
++ 
++             # ------------------------------------------------------
++--- original/powWorker.py
+++++ corrected/powWorker.py
++@@ -66,3 +66,13 @@
++         "merkle_root": merkle_root,
++         "header_hash": None
++     }
+++
+++
+++def advance_state(node, completed_hashes):
+++    """Advance the next-attempt cursor, including nonce-space wraparound."""
+++    wraps, node.nonce = divmod(node.nonce + completed_hashes, 2 ** 32)
+++    if wraps:
+++        node.coinbase["extra_nonce"] += wraps
+++        node.merkle_root = BlockFunctions.calculate_merkle_root(
+++            node.blockData.transactions, node.coinbase
+++        )
++--- original/proof_validation_tests.py
+++++ corrected/proof_validation_tests.py
++@@ -27,6 +27,7 @@
++ 
++     def __init__(self):
++ 
+++        self.name = "test-validator"
++         self.hash_validation_rate = 100000.0
++         self.semantic_validation_rate = 100000.0
++ 
++@@ -696,10 +697,10 @@
++ 
++ # ============================================================
++ # TEST 10
++-# Process an open B&B node out of minimum-bound order
++-# ============================================================
++-
++-def test_wrong_processing_order():
+++# Reorder records in a way inconsistent with incumbent history
+++# ============================================================
+++
+++def test_invalid_incumbent_history():
++ 
++     (
++         tsp,
++@@ -790,7 +791,7 @@
++ 
++     if not swapped:
++         raise RuntimeError(
++-            "Could not find records for order test."
+++            "Could not find records for incumbent-history test."
++         )
++ 
++     rebuild_hash_chain(
++@@ -918,8 +919,8 @@
++ 
++     results.append(
++         print_result(
++-            "Wrong B&B processing order",
++-            test_wrong_processing_order(),
+++            "Invalid incumbent history",
+++            test_invalid_incumbent_history(),
++             False
++         )
++     )
++--- original/scheduler.py
+++++ corrected/scheduler.py
++@@ -0,0 +1,91 @@
+++"""Causal cooperative B&B model. See MODEL_NOTES.md for timing boundaries."""
+++import copy
+++import heapq
+++import math
+++from tspFunctions import TspFunction
+++
+++
+++def run_search(tsp, nodes, transcript=None, transcript_ratio=0.0, on_event=None):
+++    """Reserve tasks at dispatch; commit search effects at search completion.
+++
+++    Logging occupies the producing worker after search completion. Search effects
+++    are then available, but validation waits for ALL logging and search events.
+++    The shared hash chain serializes append service in search-completion order.
+++    All dispatched work is drained; no partial/in-flight work is discarded.
+++    """
+++    if not nodes or any(not math.isfinite(n.search_rate) or n.search_rate <= 0 for n in nodes):
+++        raise ValueError('Every search rate must be finite and positive.')
+++    if transcript is not None and (not math.isfinite(transcript_ratio) or transcript_ratio <= 0):
+++        raise ValueError('Transcript throughput ratio must be finite and positive.')
+++    ready = tsp.priority_queue
+++    heapq.heapify(ready)
+++    idle = set(range(len(nodes)))
+++    events = []
+++    now = 0.0
+++    finishing = discovering = None
+++    records = 0
+++    log_available = 0.0
+++
+++    def emit(kind, index, task=None):
+++        if on_event is not None:
+++            on_event(kind, now, nodes[index], task)
+++
+++    def dispatch():
+++        for index in sorted(idle.copy()):
+++            if not ready:
+++                break
+++            task = heapq.heappop(ready)
+++            idle.remove(index)
+++            emit('dispatch', index, task)
+++            heapq.heappush(events, (now + 1.0 / nodes[index].search_rate, index, 'search', task))
+++
+++    dispatch()
+++    while events:
+++        now = events[0][0]
+++        # Process all existing events at the same time, worker-index order,
+++        # before dispatching newly available tasks.
+++        batch = []
+++        while events and events[0][0] == now:
+++            batch.append(heapq.heappop(events))
+++        for _, index, kind, task in batch:
+++            node = nodes[index]
+++            finishing = node
+++            if kind == 'logging':
+++                emit('logging_complete', index, task)
+++                idle.add(index)
+++                continue
+++
+++            # Only this reserved task is processed. Other ready tasks cannot
+++            # accidentally be consumed by a worker whose task is in flight.
+++            local = copy.copy(tsp)
+++            local.priority_queue = [task]
+++            before = len(transcript.steps) if transcript is not None else 0
+++            old_cost = tsp.best_cost
+++            count, work, _, _ = TspFunction.tsp_solver(
+++                local, 1, transcript, transcript_ratio
+++            )
+++            node.computations += count
+++            node.work += work
+++            new_records = (len(transcript.steps) - before) if transcript is not None else 0
+++            records += new_records
+++            tsp.best_cost, tsp.best_path, tsp.best_node = local.best_cost, local.best_path, local.best_node
+++            if tsp.best_cost < old_cost:
+++                discovering = node
+++            for child in local.priority_queue:
+++                heapq.heappush(ready, child)
+++            emit('search_complete', index, task)
+++            if new_records:
+++                delay = new_records / (transcript_ratio * node.search_rate)
+++                # One hash chain: the next append needs the previous hash.
+++                # Serialize append service in logical completion order; the
+++                # producing worker remains occupied while waiting and logging.
+++                log_available = max(now, log_available) + delay
+++                heapq.heappush(events, (log_available, index, 'logging', task))
+++            else:
+++                idle.add(index)
+++        dispatch()
+++
+++    if ready or finishing is None or tsp.best_node is None:
+++        raise RuntimeError('Search did not produce a complete tour.')
+++    return {'time': now, 'finishing_node': finishing,
+++            'discovering_node': discovering, 'transcript_records': records}
++--- original/test_regressions.py
+++++ corrected/test_regressions.py
++@@ -0,0 +1,170 @@
+++"""python -m unittest -v test_regressions; or python test_regressions.py --spawn"""
+++import contextlib,copy,io,itertools,multiprocessing,random,sys,unittest
+++from types import SimpleNamespace
+++from unittest.mock import patch
+++import benchmark,proof_validation_tests as proofs,powWorker,utils,validation
+++from mainFunctions import MainFunctions as Main
+++from nodes import Node
+++from scheduler import run_search
+++from tspData import TspData
+++from tspFunctions import TspFunction as F
+++MATRIX=[[utils.inf,250,700,40,840],[250,utils.inf,120,790,640],[700,120,utils.inf,60,40],[40,790,60,utils.inf,600],[840,640,40,600,utils.inf]]
+++def make_tsp(a):
+++    with patch.object(F,'_make_tsp_matrix',return_value=copy.deepcopy(a)):return TspData(len(a))
+++def proof_for(a):
+++    with patch.object(proofs,'TspData',side_effect=lambda n,b:make_tsp(a)):return proofs.create_genuine_proof(len(a))
+++def oracle(a):
+++    return min(sum(a[x][y] for x,y in zip(p,p[1:])) for rest in itertools.permutations(range(1,len(a))) for p in [[0,*rest,0]])
+++def cached_main(mode=0,size=5,workers=4,runs=1):
+++    for k,v in {'hashes_per_second':1000.,'computations_per_second':100.,'initial_validations_per_second':1000.,'branch_validation_nodes_per_second':100.,'transcript_per_second':200.,'hash_validation_per_second':500.,'semantic_validation_per_second':100.}.items():setattr(Main,k,v)
+++    Main.benchmarks_done=True;Main.benchmarked_validation_mode=mode;Main.benchmarked_num_of_cities=size
+++    return Main(workers,size,runs,1,mode)
+++class Regressions(unittest.TestCase):
+++    def setUp(self):
+++        self.output=contextlib.redirect_stdout(io.StringIO());self.output.__enter__()
+++        Node.transcript=None;Node.found=False;Node.simulation_time=0
+++    def tearDown(self):self.output.__exit__(None,None,None)
+++    def test_original_five_city_false_pair(self):
+++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX);fake=[0,1,2,3,4,0]
+++        self.assertEqual(c,1030);self.assertEqual(sum(MATRIX[x][y] for x,y in zip(fake,fake[1:])),1870)
+++        self.assertFalse(proofs.validate(t,fake,c,tr,vs,sigma,root))
+++        self.assertFalse(validation._validate_transcript_semantics(t,tr,fake,c,False)[0])
+++    def test_seven_city_false_pair(self):
+++        t,p,c,tr,vs,sigma,root=proofs.create_genuine_proof();fake=p[:];fake[1],fake[2]=fake[2],fake[1]
+++        self.assertEqual(c,1813);self.assertEqual(sum(t.matrix[x][y] for x,y in zip(fake,fake[1:])),2587)
+++        self.assertFalse(proofs.validate(t,fake,c,tr,vs,sigma,root))
+++    def test_equal_optimum_alternative_allowed(self):
+++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX);reverse=list(reversed(p))
+++        self.assertNotEqual(p,reverse);self.assertTrue(proofs.validate(t,reverse,c,tr,vs,sigma,root))
+++    def test_malformed_vertices_costs_and_missing_edges(self):
+++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX)
+++        paths=[None,'012340',[0,1,0],[0,1,1,3,4,0],[1,0,2,3,4,1]]
+++        for v in (True,1.0,'1',None,-1,5,[],float('nan')):
+++            q=p[:];q[1]=v;paths.append(q)
+++        for q in paths:
+++            with self.subTest(path=q):self.assertFalse(proofs.validate(t,q,c,tr,vs,sigma,root))
+++        for cost in (True,'1030',None,float('nan'),float('inf'),-1,c+1):
+++            with self.subTest(cost=cost):self.assertFalse(proofs.validate(t,p,cost,tr,vs,sigma,root))
+++        t.matrix[p[0]][p[1]]=utils.inf;self.assertFalse(proofs.validate(t,p,c,tr,vs,sigma,root))
+++    def test_original_adversarial_suite(self):
+++        for name in sorted(n for n in dir(proofs) if n.startswith('test_')):
+++            with self.subTest(name=name):self.assertEqual(getattr(proofs,name)(),name=='test_honest_proof')
+++    def test_solver_against_600_exhaustive_instances(self):
+++        rng=random.Random(20260909)
+++        for n in range(3,9):
+++            for j in range(100):
+++                a=[[utils.inf]*n for _ in range(n)]
+++                for x in range(n):
+++                    for y in range(x+1,n):a[x][y]=a[y][x]=rng.randint(1,10 if j<30 else 1000)
+++                t=make_tsp(a);F.tsp_solver(t)
+++                with self.subTest(size=n,instance=j):self.assertEqual(t.best_cost,oracle(a))
+++    def test_council_rejects_original_1050(self):
+++        self.assertEqual([F.validate_branch(make_tsp(MATRIX),[0,c],1050)[0] for c in range(1,5)],[False,True,False,True])
+++    def test_actual_parent_availability(self):
+++        m=cached_main(size=3,workers=3)
+++        for n in m.node_list:n.search_rate=1
+++        trace=[]
+++        run_search(Node.tsp,m.node_list,on_event=lambda k,t,n,p:trace.append((k,t,tuple(p.path))))
+++        starts={p:t for k,t,p in trace if k=='dispatch'};ends={p:t for k,t,p in trace if k=='search_complete'}
+++        self.assertEqual(ends[(0,)],1)
+++        for p,t in starts.items():
+++            self.assertEqual(ends[p]-t,1)
+++            if len(p)>1:self.assertGreaterEqual(t,ends[p[:-1]])
+++    def test_dependency_chain_three_seconds(self):
+++        m=cached_main(workers=3)
+++        for n in m.node_list:n.search_rate=1
+++        def step(local,*args):
+++            task=local.priority_queue.pop();depth=len(task.path)
+++            if depth<3:
+++                child=copy.copy(task);child.path=task.path+[depth];local.priority_queue.append(child)
+++            else:local.best_cost=1;local.best_path=[0,1,2,0];local.best_node=task
+++            return 1,1.,0.,not local.priority_queue
+++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list)
+++        self.assertEqual(result['time'],3);self.assertEqual(sum(n.computations for n in m.node_list),3)
+++    def test_final_transcript_drained(self):
+++        m=cached_main(workers=1);m.node_list[0].search_rate=1;tr=SimpleNamespace(steps=[])
+++        def step(local,*args):
+++            task=local.priority_queue.pop();local.best_cost=1;local.best_path=[0,1,0];local.best_node=task
+++            tr.steps.extend([{},{}]);return 1,3.,2.,True
+++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list,tr,1)
+++        self.assertEqual(result['time'],3);self.assertEqual(result['transcript_records'],2);self.assertEqual(m.node_list[0].work,3)
+++    def test_all_inflight_tasks_and_slow_logging_drained(self):
+++        m=cached_main(workers=2)
+++        for n in m.node_list:n.search_rate=1
+++        tr=SimpleNamespace(steps=[])
+++        def step(local,*args):
+++            task=local.priority_queue.pop()
+++            if task.path==[0]:
+++                for v in (1,2):
+++                    child=copy.copy(task);child.path=[0,v];local.priority_queue.append(child)
+++                logs=0
+++            else:
+++                if task.path==[0,1]:local.best_cost=1;local.best_path=[0,1,0];local.best_node=task;logs=5
+++                else:logs=1
+++                tr.steps.extend([{}]*logs)
+++            return 1,1.+logs,float(logs),not local.priority_queue
+++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list,tr,1)
+++        self.assertEqual(result['time'],8);self.assertEqual(result['transcript_records'],6);self.assertEqual(sum(n.computations for n in m.node_list),3)
+++    def test_parallel_transcripts_and_optima(self):
+++        rng=random.Random(7129);nonminimum=False
+++        for trial in range(30):
+++            size=5+trial%3;a=[[utils.inf]*size for _ in range(size)]
+++            for x in range(size):
+++                for y in range(x+1,size):a[x][y]=a[y][x]=rng.randint(1,100)
+++            with patch.object(F,'_make_tsp_matrix',return_value=a):m=cached_main(1,size,4)
+++            for n,r in zip(m.node_list,[1,3,7,11]):n.search_rate=r
+++            trace=[]
+++            def event(k,t,n,p):
+++                if k=='search_complete':trace.append((tuple(p.path),p.cost))
+++            result=run_search(Node.tsp,m.node_list,Node.transcript,Node.transcript_pouw_ratio,event)
+++            self.assertEqual(Node.tsp.best_cost,oracle(a));self.assertEqual(result['transcript_records'],len(Node.transcript.steps))
+++            self.assertTrue(proofs.validate(Node.tsp,Node.tsp.best_path,Node.tsp.best_cost,Node.transcript,m.node_list,m.transcript_sigma,m.transcript_root))
+++            frontier={(0,):Node.tsp.tsp_root.cost}
+++            for path,bound in trace:
+++                if bound>min(frontier.values()):nonminimum=True
+++                del frontier[path]
+++                for record in Node.transcript.steps:
+++                    d=record['data']
+++                    if d['type']=='branch' and tuple(d['parent_path'])==path and not d['pruned']:frontier[tuple(d['child_path'])]=d['child_lower_bound']
+++        self.assertTrue(nonminimum,'Must exercise nonserial completion order.')
+++    def test_repeat_modes_accounting_and_payload(self):
+++        for mode in (0,1,2):
+++            for repeat in range(2):
+++                m=cached_main(mode,runs=2);data=m.run_simulation();self.assertEqual(len(data['pouw']['runs']),2)
+++                for r in data['pouw']['runs']:
+++                    self.assertTrue(r['validation_valid']);self.assertEqual(len(r['winner']['path']),6)
+++                    self.assertEqual(r['winner']['path'][0],r['winner']['path'][-1]);self.assertEqual(r['winner']['cost'],r['winner']['total_cost'])
+++                    parts=sum(r[k] for k in ['search_compute_work','transcript_compute_work','proof_hash_compute_work','proof_semantic_compute_work','council_initial_compute_work','council_branch_compute_work'])
+++                    self.assertAlmostEqual(r['total_compute_work'],parts);self.assertAlmostEqual(r['transcript_compute_work'],r['transcript_records']/200.)
+++                last=data['pouw']['runs'][-1];self.assertEqual(last['winner']['path'],Node.tsp.best_path);self.assertEqual(last['winner']['cost'],Node.tsp.best_cost)
+++                self.assertAlmostEqual(sum(n.work for n in m.node_list)/100.,last['pouw_compute_work'])
+++                if mode!=1:self.assertIsNone(Node.transcript)
+++    def test_original_solution_payload(self):
+++        with patch.object(F,'_make_tsp_matrix',return_value=MATRIX):m=cached_main()
+++        r=m.multiple_node_pouw_tsp();self.assertEqual(r['winner']['total_cost'],1030)
+++        self.assertEqual(r['winner']['path'],[0,1,4,2,3,0]);self.assertEqual(r['winner']['name'],r['discovering_node'])
+++    def test_pow_earliest_winner_counts_cursor_and_ties(self):
+++        for rates,hashes,elapsed,counts,winner in [([100,100],[90,10],.1,[10,10],'node2'),([10,6],[1,None],.1,[1,0],'node1'),([10,20],[1,2],.1,[1,2],'node1')]:
+++            m=cached_main(workers=2);Node.found=False;Node.simulation_time=0
+++            for n,r in zip(m.node_list,rates):n.hash_rate=r
+++            class Pool:
+++                def __init__(self,*a,**k):pass
+++                def __enter__(self):return self
+++                def __exit__(self,*a):pass
+++                def map(self,*a):return [dict(found=h is not None,hashes=h or r,nonce=(h or r)-1,extra_nonce=0,merkle_root='test',header_hash='0test') for r,h in zip(rates,hashes)]
+++            with patch('mainFunctions.multiprocessing.Pool',Pool):r=m.multiple_node_pow(1)
+++            self.assertEqual(r['winner']['name'],winner);self.assertEqual(r['simulation_time'],elapsed)
+++            self.assertEqual([n.mining_count for n in m.node_list],counts);self.assertEqual([n.nonce for n in m.node_list],counts)
+++    def test_pow_nonce_wrap(self):
+++        m=cached_main(workers=1);n=m.node_list[0];n.nonce=2**32-1;old=n.merkle_root;powWorker.advance_state(n,2)
+++        self.assertEqual(n.nonce,1);self.assertEqual(n.coinbase['extra_nonce'],1);self.assertNotEqual(n.merkle_root,old)
+++    def test_invalid_run_rejected(self):
+++        m=cached_main(1)
+++        with patch.object(m,'multiple_node_pow',return_value={}),patch.object(m,'multiple_node_pouw_tsp',return_value={'validation_valid':False}):
+++            with self.assertRaises(RuntimeError):m.run_simulation()
+++    def test_benchmark_components(self):
+++        for name in ('benchmark_tsp_pouw','benchmark_initial_validation','benchmark_branch_validation','benchmark_transcript','benchmark_hash_validation','benchmark_semantic_validation'):
+++            with self.subTest(name=name):self.assertGreater(getattr(benchmark,name)(duration=.03,size=5),0)
+++if __name__=='__main__':
+++    if '--spawn' in sys.argv:sys.argv.remove('--spawn');multiprocessing.set_start_method('spawn')
+++    unittest.main(verbosity=2)
++--- original/validation.py
+++++ corrected/validation.py
++@@ -4,6 +4,8 @@
++ from tspFunctions import TspFunction
++ import multiprocessing
++ import utils
+++import math
+++from numbers import Real
++ 
++ 
++ def council_validation(
++@@ -205,83 +207,7 @@
++     # Extract the validation arguments.
++     tsp, proposed_path, proposed_cost = args
++ 
++-    # Assume the proposed solution is valid until
++-    # one of the validation checks fails.
++-    valid = True
++-
++-    # --------------------------------------------------------
++-    # PATH STRUCTURE VALIDATION
++-    # --------------------------------------------------------
++-
++-    # The path must exist.
++-    if not proposed_path:
++-        valid = False
++-
++-    # The path must contain every city exactly once,
++-    # plus the repeated starting city at the end.
++-    elif len(proposed_path) != tsp.size + 1:
++-        valid = False
++-
++-    # The tour must start and end at vertex 0.
++-    elif (
++-        proposed_path[0] != 0
++-        or proposed_path[-1] != 0
++-    ):
++-        valid = False
++-
++-    # Every city index must be valid.
++-    elif any(
++-        vertex < 0 or vertex >= tsp.size
++-        for vertex in proposed_path[:-1]
++-    ):
++-        valid = False
++-
++-    # Every city must appear exactly once before
++-    # returning to the starting city.
++-    elif len(set(proposed_path[:-1])) != tsp.size:
++-        valid = False
++-
++-    # --------------------------------------------------------
++-    # PATH COST VALIDATION
++-    # --------------------------------------------------------
++-
++-    else:
++-
++-        total_cost = 0
++-
++-        for i in range(len(proposed_path) - 1):
++-
++-            source = proposed_path[i]
++-            destination = proposed_path[i + 1]
++-
++-            edge_cost = tsp.matrix[source][destination]
++-
++-            # The proposed path cannot contain a missing edge.
++-            if edge_cost == utils.inf:
++-                valid = False
++-                break
++-
++-            total_cost += edge_cost
++-
++-        # The independently calculated path cost must
++-        # match the claimed solution cost.
++-        if valid and total_cost != proposed_cost:
++-            valid = False
++-
++-    return valid
++-
++-
++-def _parallel_branch_validation(
++-    tsp,
++-    council,
++-    proposed_cost
++-):
++-    # Generate the initial Branch and Bound search branches.
++-    branches = TspFunction.create_initial_branches(tsp)
++-
++-    # Store the multiprocessing.Process objects so they can
++-    # later be waited on with join().
++-    processes = []
+++    return _validate_proposed_tour(tsp, proposed_path, proposed_cost)
++ 
++ 
++ def _parallel_branch_validation(
++@@ -515,10 +441,7 @@
++     # 1. HAMILTONIAN CYCLE
++     # =========================================================
++ 
++-    if not _validate_hamiltonian_cycle(
++-        tsp,
++-        path
++-    ):
+++    if not _validate_proposed_tour(tsp, path, proposed_cost):
++         return empty_result
++ 
++     # One semantic unit for Hamiltonian validation.
++@@ -707,6 +630,9 @@
++         )
++ 
++     if transcript is None:
+++        return False, 0, None, utils.inf
+++
+++    if not _validate_proposed_tour(tsp, proposed_path, proposed_cost):
++         return False, 0, None, utils.inf
++ 
++     computations = 0
++@@ -796,26 +722,11 @@
++ 
++             return fail()
++ 
++-        # =====================================================
++-        # VERIFY B&B PRIORITY-QUEUE ORDER
++-        # =====================================================
++-        #
++-        # The real solver always pops a node having the
++-        # smallest lower bound currently present in the queue.
++-        #
++-        # Equal lower bounds may be processed in either order.
++-
++-        minimum_lower_bound = min(
++-            node.cost
++-            for node in open_nodes.values()
++-        )
++-
++-        if (
++-            current_node.cost
++-            != minimum_lower_bound
++-        ):
++-
++-            return fail()
+++        # Completion order may differ from dispatch priority in a parallel
+++        # search. Soundness requires a generated open node, valid reductions,
+++        # incumbent-consistent pruning and an exhausted frontier; it does not
+++        # require globally minimum-bound completion order. This verifier checks
+++        # the search result, not the scheduler's resource/timing claims.
++ 
++         # =====================================================
++         # EXPANSION
++@@ -1753,36 +1664,34 @@
++             "Validating hamiltonian cycle"
++         )
++ 
++-    # A path must exist.
++-    if not path:
+++    if not isinstance(path, (list, tuple)) or len(path) != tsp.size + 1:
++         return False
++-
++-    # Hamiltonian cycle over n cities contains
++-    # n + 1 vertices because city 0 is repeated.
++-    if len(path) != tsp.size + 1:
+++    # bool and float vertices must not masquerade as integer city indices.
+++    if any(type(vertex) is not int or not 0 <= vertex < tsp.size for vertex in path):
++         return False
++-
++-    # Search always starts and ends at city 0.
++-    if path[0] != 0 or path[-1] != 0:
+++    return (path[0] == 0 and path[-1] == 0
+++            and len(set(path[:-1])) == tsp.size)
+++
+++
+++def _validate_proposed_tour(tsp, path, proposed_cost):
+++    """Validate the actual submitted cycle, independently of its transcript.
+++
+++    Alternative equal-cost optimum tours are permitted by the protocol.
+++    """
+++    if not _validate_hamiltonian_cycle(tsp, path, debug=False):
++         return False
++-
++-    # Every city must be valid.
++-    if any(
++-        vertex < 0
++-        or vertex >= tsp.size
++-        for vertex in path[:-1]
++-    ):
+++    if isinstance(proposed_cost, bool) or not isinstance(proposed_cost, Real):
++         return False
++-
++-    # Every city must occur exactly once
++-    # before returning to city 0.
++-    if (
++-        len(set(path[:-1]))
++-        != tsp.size
++-    ):
+++    if not math.isfinite(proposed_cost):
++         return False
++-
++-    return True
+++    total = 0
+++    for source, destination in zip(path, path[1:]):
+++        edge = tsp.matrix[source][destination]
+++        if isinstance(edge, bool) or not isinstance(edge, Real) or not math.isfinite(edge):
+++            return False
+++        total += edge
+++    return total == proposed_cost
+++
++ 
++ def _validate_transcript_root(
++     tsp,
+diff --git a/TEST_RESULTS.md b/TEST_RESULTS.md
+new file mode 100644
+index 0000000..ad585df
+--- /dev/null
++++ b/TEST_RESULTS.md
+@@ -0,0 +1,33 @@
++# Verification results — 9 September 2026
++
++Environment: Linux, Python 3.12.14. No native Windows GUI/display test was performed.
++
++| Check | Outcome |
++|---|---|
++| `python proof_validation_tests.py` | 10/10 expected decisions; fixture now includes its required name |
++| `python -m unittest -v test_regressions` | All 18 test methods passed |
++| Exhaustive solver oracle within regressions | 600 complete symmetric integer instances, sizes 3–8, all optimal costs matched |
++| Parallel scheduler + replay within regressions | 30 instances, sizes 5–7, heterogeneous worker rates; all optima matched enumeration and transcripts validated; nonminimum-bound completion order was exercised |
++| Original five-city attack | 1870-cost path with claimed cost 1030 rejected |
++| Seven-city attack | 2587-cost path with claimed cost 1813 rejected |
++| Alternative optimum tour | Reversed symmetric optimum accepted |
++| Invalid inputs | Invalid city types/indices/structure, nonfinite/nonnumeric costs and missing tour edges rejected |
++| Dependency chain | Three one-second dependent tasks finish at 3 seconds |
++| Final transcript work | One search second plus two append seconds finishes at 3 seconds |
++| Outstanding append batches | Two children finishing at time 2 with five- and one-second ordered append batches drain at time 8 |
++| PoW cutoff | 0.1-second success wins over 0.9-second success; exact floor counts, equal-time ties, cursors and nonce wrap checked |
++| Complete solution payload | Original example reports closed optimal path and tour cost 1030 |
++| Repeated integration | Two invocations per validation mode, two repetitions per algorithm per invocation; accounting components and reset state checked |
++| Rejected proposals | Invalid result raises before averaging |
++| Component calibration smoke | All six TSP/validation/append calibrators ran successfully |
++| `spawn` integration | Both selected integration test methods passed, including 30 parallel proofs and repeated runs across modes |
++| Normal calibration integration | Five workers, seven cities, difficulty 2, proof mode; default two-second-target benchmarks and full simulation passed |
++| Compilation | All Python files compiled successfully |
++
++The integration suite uses fixed synthetic rates to make accounting assertions reproducible. Benchmark smoke tests execute measured calibration, and `calibration_smoke.py` separately uses normal calibration. Controlled scheduler/PoW tests mock task results to create exact counterexamples; real scheduler, proof and council multiprocessing integration is also covered.
++
++Normal-calibration example (random workload, not a recommended thesis result): 63 B&B nodes, 108 transcript records, search work 0.000869482 reference seconds, append work 0.000261795 reference seconds, validation work 0.001255326 reference seconds, total work 0.002386604 reference seconds. Simulated search-plus-append time was 0.864443 seconds and total time 2.584821 seconds. Values will differ on another run/machine.
++
++Raw logs are in `test-results/`. `SOURCE_CHANGES.patch` compares revised source/document files with the reviewed upload. The entire updated project is included; no patch application is required.
++
++These results address the six specified regressions within the documented educational model. Regenerate thesis experiments, update the algorithm/metric descriptions from `MODEL_NOTES.md`, and check the graphical interface on the submission machine. Spawn-mode success on Linux does not constitute native Windows/Python 3.13 GUI verification.
+diff --git a/benchmark.py b/benchmark.py
+index fbc2c48..02c4de4 100644
+--- a/benchmark.py
++++ b/benchmark.py
+@@ -467,10 +467,10 @@ def benchmark_semantic_validation(
+ 
+         hamiltonian_valid = (
+             validation
+-            ._validate_hamiltonian_cycle(
++            ._validate_proposed_tour(
+                 tsp,
+                 proposed_path,
+-                debug=False
++                proposed_cost
+             )
+         )
+ 
+diff --git a/calibration_smoke.py b/calibration_smoke.py
+new file mode 100644
+index 0000000..44f4d99
+--- /dev/null
++++ b/calibration_smoke.py
+@@ -0,0 +1,14 @@
++"""Optional real-calibration integration smoke test (~10 seconds)."""
++import json
++from mainFunctions import MainFunctions
++if __name__ == '__main__':
++    MainFunctions.benchmarks_done=False
++    simulation=MainFunctions(5,7,1,2,1)
++    result=simulation.run_simulation()
++    run=result['pouw']['runs'][0]
++    assert run['validation_valid']
++    assert run['winner']['path'][0]==run['winner']['path'][-1]==0
++    assert run['transcript_records']>0
++    assert run['transcript_compute_work']>0
++    print('CALIBRATION SMOKE PASS')
++    print(json.dumps({k:run[k] for k in ('pouw_computations','transcript_records','search_compute_work','transcript_compute_work','validation_compute_work','total_compute_work','pouw_time','total_time')},indent=2))
+diff --git a/gui.py b/gui.py
+index 27b70d4..cc983ae 100644
+--- a/gui.py
++++ b/gui.py
+@@ -1309,9 +1309,8 @@ def show_node_details(data):
+ 
+             text=(
+ 
+-                f"Winning TSP node: "
+-
+-                f"{winner['name']}"
++                f"Best-tour discoverer: {winner['name']} | "
++                f"Finishing worker: {run['finishing_node']}"
+ 
+             )
+ 
+@@ -1357,9 +1356,9 @@ def show_node_details(data):
+ 
+             text=(
+ 
+-                f"Cost: "
++                f"Search-node lower bound: "
+ 
+-                f"{winner['cost']}"
++                f"{winner['lower_bound']}"
+ 
+             )
+ 
+@@ -1381,7 +1380,7 @@ def show_node_details(data):
+ 
+             text=(
+ 
+-                f"Total cost: "
++                f"Tour cost (including return): "
+ 
+                 f"{winner['total_cost']}"
+ 
+@@ -1624,7 +1623,7 @@ def show_comparison_graph(data):
+         "PoUW Validation Work Breakdown",
+ 
+         [
+-            "Base PoUW",
++            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
+             "Validation",
+             validation_name
+         ],
+@@ -1650,7 +1649,7 @@ def show_comparison_graph(data):
+         "PoUW Validation Time Breakdown",
+ 
+         [
+-            "Base PoUW",
++            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
+             "Validation",
+             validation_name
+         ],
+diff --git a/mainFunctions.py b/mainFunctions.py
+index 2a3a6ef..ba752f1 100644
+--- a/mainFunctions.py
++++ b/mainFunctions.py
+@@ -10,6 +10,8 @@ from blockData import BlockData
+ from validation import council_validation
+ from validation import proof_based_validation
+ import heapq
++from fractions import Fraction
++from scheduler import run_search
+ 
+ # Validation modes
+ NO_VALIDATION = 0b00
+@@ -428,6 +430,7 @@ class MainFunctions:
+             self.num_of_cities
+         )
+ 
++        Node.transcript = None
+         # Create the shared transcript when proof validation is enabled.
+         if self.validation_mode & PROOF_VALIDATION:
+ 
+@@ -539,21 +542,6 @@ class MainFunctions:
+                     arguments
+                 )
+ 
+-                # Update nodes that did not find a valid hash
+-                # during the current mining interval.
+-                for node, result in zip(
+-                    self.node_list,
+-                    results
+-                ):
+-                    if not result["found"]:
+-                        node.nonce = result["nonce"]
+-                        node.coinbase["extra_nonce"] = (
+-                            result["extra_nonce"]
+-                        )
+-                        node.merkle_root = (
+-                            result["merkle_root"]
+-                        )
+-
+                 # Find all nodes that found a valid hash
+                 # during the current mining interval.
+                 successful_nodes = [
+@@ -565,14 +553,18 @@ class MainFunctions:
+                 # If no node found a valid hash, one simulated
+                 # second of mining has elapsed.
+                 if not successful_nodes:
+-                    for node in self.node_list:
+-                        node.mining_count += node.hash_rate
++                    for node, result in zip(self.node_list, results):
++                        node.update_pow_state(result)
+ 
+                     Node.simulation_time += 1
+                     continue
+ 
+-                # Select the first node that found a valid hash.
+-                winner_index, winner = successful_nodes[0]
++                # Earliest exact rational completion time; list index breaks ties.
++                winner_index, winner = min(
++                    successful_nodes,
++                    key=lambda item: (Fraction(item[1]["hashes"],
++                                               self.node_list[item[0]].hash_rate), item[0])
++                )
+ 
+                 finishing_node = (
+                     self.node_list[winner_index]
+@@ -584,37 +576,17 @@ class MainFunctions:
+ 
+                 # Calculate the fraction of a second needed
+                 # by the winner to find the valid hash.
+-                winner_time = (
+-                    hashes
+-                    / finishing_node.hash_rate
+-                )
++                cutoff = Fraction(hashes, finishing_node.hash_rate)
++                winner_time = float(cutoff)
+ 
+-                # Calculate how much work every node performed
+-                # during the final fraction of the simulated second.
++                # Count completed hashes, never rounded partial attempts.
++                # Reconstruct each node's next nonce at exactly this cutoff.
+                 for node in self.node_list:
+-                    work_done = round(
+-                        node.hash_rate
+-                        * winner_time
+-                    )
+-
++                    work_done = (node.hash_rate * cutoff.numerator) // cutoff.denominator
+                     node.mining_count += work_done
++                    powWorker.advance_state(node, work_done)
+ 
+-                # Save the winning mining state.
+-                finishing_node.nonce = (
+-                    winner["nonce"]
+-                )
+-
+-                finishing_node.coinbase["extra_nonce"] = (
+-                    winner["extra_nonce"]
+-                )
+-
+-                finishing_node.merkle_root = (
+-                    winner["merkle_root"]
+-                )
+-
+-                finishing_node.header_hash = (
+-                    winner["header_hash"]
+-                )
++                finishing_node.header_hash = winner["header_hash"]
+ 
+                 # Advance the simulation time by the fraction
+                 # of a second required to find the winning hash.
+@@ -724,124 +696,16 @@ class MainFunctions:
+         council_branch_compute_work = 0.0
+         council_compute_work = 0.0
+ 
+-        # ==========================================================
+-        # EVENT-DRIVEN POUW SCHEDULER
+-        # ==========================================================
+-
+-        event_queue = []
+-
+-        for index, node in enumerate(self.node_list):
+-
+-            if node.search_rate > 0:
+-
+-                first_event_time = (
+-                    1.0 / node.search_rate
+-                )
+-
+-                heapq.heappush(
+-                    event_queue,
+-                    (
+-                        first_event_time,
+-                        index,
+-                        node
+-                    )
+-                )
+-
+-        finishing_node = None
+-
+-        # ----------------------------------------------------------
+-        # Process events in simulated completion-time order
+-        # ----------------------------------------------------------
+-
+-        while event_queue:
+-
+-            (
+-                event_time,
+-                node_index,
+-                node
+-            ) = heapq.heappop(
+-                event_queue
+-            )
+-
+-            pouw_time = event_time
+-
+-            Node.simulation_time = (
+-                event_time
+-            )
+-
+-            (
+-                computations,
+-                work,
+-                _,
+-                finished
+-            ) = TspFunction.tsp_solver(
+-                Node.tsp,
+-                1,
+-                Node.transcript,
+-                Node.transcript_pouw_ratio
+-            )
+-
+-            # Raw B&B nodes processed.
+-            node.computations += (
+-                computations
+-            )
+-
+-            # Computational work.
+-            #
+-            # In Proof mode this may additionally contain
+-            # transcript-generation overhead.
+-            node.work += work
+-
+-            # ------------------------------------------------------
+-            # Search completed
+-            # ------------------------------------------------------
+-
+-            if finished:
+-
+-                Node.found = True
+-                finishing_node = node
+-
+-                break
+-
+-            # ------------------------------------------------------
+-            # Schedule next operation
+-            # ------------------------------------------------------
+-
+-            transcript_equivalent_work = max(
+-                0.0,
+-                work - computations
+-            )
+-
+-            transcript_delay = (
+-                transcript_equivalent_work
+-                / node.search_rate
+-            )
+-
+-            next_event_time = (
+-                event_time
+-                + transcript_delay
+-                + (1.0 / node.search_rate)
+-            )
+-
+-            heapq.heappush(
+-                event_queue,
+-                (
+-                    next_event_time,
+-                    node_index,
+-                    node
+-                )
+-            )
+-
+-        # ----------------------------------------------------------
+-        # Safety check
+-        # ----------------------------------------------------------
+-
+-        if finishing_node is None:
+-
+-            raise RuntimeError(
+-                "PoUW event queue became empty "
+-                "before TSP completion."
+-            )
++        search_result = run_search(
++            Node.tsp, self.node_list, Node.transcript,
++            Node.transcript_pouw_ratio
++        )
++        pouw_time = search_result["time"]
++        finishing_node = search_result["finishing_node"]
++        discovering_node = search_result["discovering_node"]
++        transcript_records = search_result["transcript_records"]
++        Node.found = True
++        Node.simulation_time = pouw_time
+ 
+         # ----------------------------------------------------------
+         # Display TSP result
+@@ -882,7 +746,7 @@ class MainFunctions:
+         )
+ 
+         # ----------------------------------------------------------
+-        # PoUW reference-machine compute work
++        # Search + transcript reference-machine compute work
+         # ----------------------------------------------------------
+         #
+         # B&B nodes
+@@ -892,10 +756,16 @@ class MainFunctions:
+         # = reference seconds
+         # ----------------------------------------------------------
+ 
+-        pouw_compute_work = (
+-            pouw_computations
+-            / MainFunctions.computations_per_second
++        search_compute_work = (
++            pouw_computations / MainFunctions.computations_per_second
++        )
++        transcript_compute_work = (
++            transcript_records / MainFunctions.transcript_per_second
++            if transcript_records else 0.0
+         )
++        pouw_compute_work = search_compute_work + transcript_compute_work
++        proof_hash_checks = proof_semantic_checks = 0
++        proof_hash_compute_work = proof_semantic_compute_work = 0.0
+ 
+         # ----------------------------------------------------------
+         # Diagnostics
+@@ -937,9 +807,7 @@ class MainFunctions:
+         # PROOF VALIDATION
+         # ==========================================================
+         #
+-        # Temporary old accounting.
+-        # We will normalize this separately when Proof Validation
+-        # is redesigned/fixed.
++        # Hash checks and semantic units use separate measured rates.
+         # ==========================================================
+ 
+         if self.validation_mode & PROOF_VALIDATION:
+@@ -969,6 +837,8 @@ class MainFunctions:
+                 proof_result["validation_time"]
+             )
+ 
++            proof_hash_checks = proof_result["hash_checks"]
++            proof_semantic_checks = proof_result["semantic_checks"]
+             proof_hash_compute_work = (
+                 proof_result["hash_checks"]
+                 / MainFunctions.hash_validation_per_second
+@@ -1243,7 +1113,7 @@ class MainFunctions:
+         # ----------------------------------------------------------
+ 
+         total_computations = (
+-            pouw_computations
++            pouw_compute_work * MainFunctions.computations_per_second
+             + validation_computations
+         )
+ 
+@@ -1281,6 +1151,16 @@ class MainFunctions:
+ 
+             "pouw_computations":
+                 pouw_computations,
++            "search_compute_work": search_compute_work,
++            "transcript_records": transcript_records,
++            "transcript_compute_work": transcript_compute_work,
++            "proof_hash_checks": proof_hash_checks,
++            "proof_semantic_checks": proof_semantic_checks,
++            "proof_hash_compute_work": proof_hash_compute_work,
++            "proof_semantic_compute_work": proof_semantic_compute_work,
++            "finishing_node": finishing_node.name,
++            "discovering_node": discovering_node.name,
++
+ 
+             "pouw_compute_work":
+                 pouw_compute_work,
+@@ -1310,7 +1190,7 @@ class MainFunctions:
+             # Validated PoUW
+             # ------------------------------------------------------
+ 
+-            # PoUW B&B nodes + equivalent validation computations.
++            # B&B-equivalent search, transcript and validation work.
+             "total_computations":
+                 total_computations,
+ 
+@@ -1349,22 +1229,24 @@ class MainFunctions:
+             "winner": {
+ 
+                 "name":
+-                    finishing_node.name,
++                    discovering_node.name,
+ 
+                 "path":
+-                    winning_node.path,
++                    Node.tsp.best_path[:],
+ 
+                 "cost":
+-                    winning_node.cost,
++                    Node.tsp.best_cost,
+ 
+                 "total_cost":
+-                    winning_node.total_cost,
++                    Node.tsp.best_cost,
+ 
+                 "vertex":
+-                    winning_node.vertex,
++                    Node.tsp.best_path[-1],
+ 
+                 "visited":
+-                    winning_node.visited
++                    Node.tsp.size,
++                "lower_bound": winning_node.cost,
++                "partial_path_cost": winning_node.total_cost
+             },
+ 
+             # ------------------------------------------------------
+diff --git a/powWorker.py b/powWorker.py
+index 202ae3d..9366449 100644
+--- a/powWorker.py
++++ b/powWorker.py
+@@ -65,4 +65,14 @@ def pow_worker(args):
+         "extra_nonce": extra_nonce,
+         "merkle_root": merkle_root,
+         "header_hash": None
+-    }
+\ No newline at end of file
++    }
++
++
++def advance_state(node, completed_hashes):
++    """Advance the next-attempt cursor, including nonce-space wraparound."""
++    wraps, node.nonce = divmod(node.nonce + completed_hashes, 2 ** 32)
++    if wraps:
++        node.coinbase["extra_nonce"] += wraps
++        node.merkle_root = BlockFunctions.calculate_merkle_root(
++            node.blockData.transactions, node.coinbase
++        )
+diff --git a/proof_validation_tests.py b/proof_validation_tests.py
+index 25a0297..39c1c02 100644
+--- a/proof_validation_tests.py
++++ b/proof_validation_tests.py
+@@ -27,6 +27,7 @@ class TestValidator:
+ 
+     def __init__(self):
+ 
++        self.name = "test-validator"
+         self.hash_validation_rate = 100000.0
+         self.semantic_validation_rate = 100000.0
+ 
+@@ -696,10 +697,10 @@ def test_valid_but_nonoptimal_solution():
+ 
+ # ============================================================
+ # TEST 10
+-# Process an open B&B node out of minimum-bound order
++# Reorder records in a way inconsistent with incumbent history
+ # ============================================================
+ 
+-def test_wrong_processing_order():
++def test_invalid_incumbent_history():
+ 
+     (
+         tsp,
+@@ -790,7 +791,7 @@ def test_wrong_processing_order():
+ 
+     if not swapped:
+         raise RuntimeError(
+-            "Could not find records for order test."
++            "Could not find records for incumbent-history test."
+         )
+ 
+     rebuild_hash_chain(
+@@ -918,8 +919,8 @@ if __name__ == "__main__":
+ 
+     results.append(
+         print_result(
+-            "Wrong B&B processing order",
+-            test_wrong_processing_order(),
++            "Invalid incumbent history",
++            test_invalid_incumbent_history(),
+             False
+         )
+     )
+diff --git a/scheduler.py b/scheduler.py
+new file mode 100644
+index 0000000..eedeb06
+--- /dev/null
++++ b/scheduler.py
+@@ -0,0 +1,91 @@
++"""Causal cooperative B&B model. See MODEL_NOTES.md for timing boundaries."""
++import copy
++import heapq
++import math
++from tspFunctions import TspFunction
++
++
++def run_search(tsp, nodes, transcript=None, transcript_ratio=0.0, on_event=None):
++    """Reserve tasks at dispatch; commit search effects at search completion.
++
++    Logging occupies the producing worker after search completion. Search effects
++    are then available, but validation waits for ALL logging and search events.
++    The shared hash chain serializes append service in search-completion order.
++    All dispatched work is drained; no partial/in-flight work is discarded.
++    """
++    if not nodes or any(not math.isfinite(n.search_rate) or n.search_rate <= 0 for n in nodes):
++        raise ValueError('Every search rate must be finite and positive.')
++    if transcript is not None and (not math.isfinite(transcript_ratio) or transcript_ratio <= 0):
++        raise ValueError('Transcript throughput ratio must be finite and positive.')
++    ready = tsp.priority_queue
++    heapq.heapify(ready)
++    idle = set(range(len(nodes)))
++    events = []
++    now = 0.0
++    finishing = discovering = None
++    records = 0
++    log_available = 0.0
++
++    def emit(kind, index, task=None):
++        if on_event is not None:
++            on_event(kind, now, nodes[index], task)
++
++    def dispatch():
++        for index in sorted(idle.copy()):
++            if not ready:
++                break
++            task = heapq.heappop(ready)
++            idle.remove(index)
++            emit('dispatch', index, task)
++            heapq.heappush(events, (now + 1.0 / nodes[index].search_rate, index, 'search', task))
++
++    dispatch()
++    while events:
++        now = events[0][0]
++        # Process all existing events at the same time, worker-index order,
++        # before dispatching newly available tasks.
++        batch = []
++        while events and events[0][0] == now:
++            batch.append(heapq.heappop(events))
++        for _, index, kind, task in batch:
++            node = nodes[index]
++            finishing = node
++            if kind == 'logging':
++                emit('logging_complete', index, task)
++                idle.add(index)
++                continue
++
++            # Only this reserved task is processed. Other ready tasks cannot
++            # accidentally be consumed by a worker whose task is in flight.
++            local = copy.copy(tsp)
++            local.priority_queue = [task]
++            before = len(transcript.steps) if transcript is not None else 0
++            old_cost = tsp.best_cost
++            count, work, _, _ = TspFunction.tsp_solver(
++                local, 1, transcript, transcript_ratio
++            )
++            node.computations += count
++            node.work += work
++            new_records = (len(transcript.steps) - before) if transcript is not None else 0
++            records += new_records
++            tsp.best_cost, tsp.best_path, tsp.best_node = local.best_cost, local.best_path, local.best_node
++            if tsp.best_cost < old_cost:
++                discovering = node
++            for child in local.priority_queue:
++                heapq.heappush(ready, child)
++            emit('search_complete', index, task)
++            if new_records:
++                delay = new_records / (transcript_ratio * node.search_rate)
++                # One hash chain: the next append needs the previous hash.
++                # Serialize append service in logical completion order; the
++                # producing worker remains occupied while waiting and logging.
++                log_available = max(now, log_available) + delay
++                heapq.heappush(events, (log_available, index, 'logging', task))
++            else:
++                idle.add(index)
++        dispatch()
++
++    if ready or finishing is None or tsp.best_node is None:
++        raise RuntimeError('Search did not produce a complete tour.')
++    return {'time': now, 'finishing_node': finishing,
++            'discovering_node': discovering, 'transcript_records': records}
+diff --git a/test-results/calibration-test-results.txt b/test-results/calibration-test-results.txt
+new file mode 100644
+index 0000000..83b0654
+--- /dev/null
++++ b/test-results/calibration-test-results.txt
+@@ -0,0 +1,72 @@
++
++================ BENCHMARK RESULTS ================
++PoW: 1203486.323592109 hashes/s
++PoUW: 72456.90647393132 B&B nodes/s
++Proof transcript generation: 412536.000418934 records/s
++Proof hash validation: 479638.6156074097 checks/s
++Proof semantic validation: 112604.20776592933 semantic units/s
++===================================================
++
++TOTAL HASH RATE: 2828
++POW OBSERVED RATE: 2814.077922077922
++TSP Matrix [[inf, 600, 50, 600, 600, 400, 340], [600, inf, 80, 20, 700, 20, 300], [50, 80, inf, 600, 10, 360, 840], [600, 20, 600, inf, 70, 500, 100], [600, 700, 10, 70, inf, 70, 70], [400, 20, 360, 500, 70, inf, 60], [340, 300, 840, 100, 70, 60, inf]]
++Best TSP path: [0, 6, 5, 1, 3, 4, 2, 0]
++Best TSP cost: 570
++POUW COMPUTATIONS: 63
++POUW TIME: 0.8644433720639366
++THEORETICAL TIME: 0.3925019111002405
++TOTAL SEARCH RATE: 160.50877261565873
++POUW OBSERVED RATE: 72.87926778775781
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Complete B&B replay valid.
++Reconstructed best path: [0, 6, 5, 1, 3, 4, 2, 0]
++Reconstructed best cost: 570
++Semantic validator: node1
++Semantic validation rate: 75.5069616378155 semantic units/s
++Semantic checks: 116
++Expected semantic time: 1.536282184898627
++
++================ PROOF VALIDATION DEBUG ================
++Proof valid: True
++Hash checks: 108
++Hash benchmark rate: 479638.6156074097 checks/s
++Hash compute work: 0.00022516952656789288 reference s
++Semantic checks: 116
++Semantic benchmark rate: 112604.20776592933 semantic units/s
++Semantic compute work: 0.0010301568857988817 reference s
++Total Proof compute work: 0.0012553264123667746 reference s
++Proof validation time: 1.720377596389231 simulated s
++========================================================
++
++
++================ SIMULATION AVERAGES ================
++AVG POW RAW HASHES: 234.0
++AVG POUW RAW B&B NODES: 63.0
++AVG POW REFERENCE WORK: 0.00019443511356370707
++AVG POUW REFERENCE WORK: 0.0011312776658151636
++AVG VALIDATION REFERENCE WORK: 0.0012553264123667746
++AVG VALIDATED POUW REFERENCE WORK: 0.002386604078181938
++EXPECTED VALIDATED WORK: 0.002386604078181938
++VALIDATED WORK ERROR: 0.0
++AVG POW TIME: 0.08315334773218143
++AVG POUW TIME: 0.8644433720639366
++AVG VALIDATION TIME: 1.720377596389231
++AVG VALIDATED POUW TIME: 2.5848209684531676
++EXPECTED VALIDATED TIME: 2.5848209684531676
++VALIDATED TIME ERROR: 0.0
++=====================================================
++
++CALIBRATION SMOKE PASS
++{
++  "pouw_computations": 63,
++  "transcript_records": 108,
++  "search_compute_work": 0.0008694823318556424,
++  "transcript_compute_work": 0.0002617953339595212,
++  "validation_compute_work": 0.0012553264123667746,
++  "total_compute_work": 0.002386604078181938,
++  "pouw_time": 0.8644433720639366,
++  "total_time": 2.5848209684531676
++}
+diff --git a/test-results/regression-test-results.txt b/test-results/regression-test-results.txt
+new file mode 100644
+index 0000000..139e5e7
+--- /dev/null
++++ b/test-results/regression-test-results.txt
+@@ -0,0 +1,23 @@
++test_actual_parent_availability (test_regressions.Regressions.test_actual_parent_availability) ... ok
++test_all_inflight_tasks_and_slow_logging_drained (test_regressions.Regressions.test_all_inflight_tasks_and_slow_logging_drained) ... ok
++test_benchmark_components (test_regressions.Regressions.test_benchmark_components) ... ok
++test_council_rejects_original_1050 (test_regressions.Regressions.test_council_rejects_original_1050) ... ok
++test_dependency_chain_three_seconds (test_regressions.Regressions.test_dependency_chain_three_seconds) ... ok
++test_equal_optimum_alternative_allowed (test_regressions.Regressions.test_equal_optimum_alternative_allowed) ... ok
++test_final_transcript_drained (test_regressions.Regressions.test_final_transcript_drained) ... ok
++test_invalid_run_rejected (test_regressions.Regressions.test_invalid_run_rejected) ... ok
++test_malformed_vertices_costs_and_missing_edges (test_regressions.Regressions.test_malformed_vertices_costs_and_missing_edges) ... ok
++test_original_adversarial_suite (test_regressions.Regressions.test_original_adversarial_suite) ... ok
++test_original_five_city_false_pair (test_regressions.Regressions.test_original_five_city_false_pair) ... ok
++test_original_solution_payload (test_regressions.Regressions.test_original_solution_payload) ... ok
++test_parallel_transcripts_and_optima (test_regressions.Regressions.test_parallel_transcripts_and_optima) ... ok
++test_pow_earliest_winner_counts_cursor_and_ties (test_regressions.Regressions.test_pow_earliest_winner_counts_cursor_and_ties) ... ok
++test_pow_nonce_wrap (test_regressions.Regressions.test_pow_nonce_wrap) ... ok
++test_repeat_modes_accounting_and_payload (test_regressions.Regressions.test_repeat_modes_accounting_and_payload) ... ok
++test_seven_city_false_pair (test_regressions.Regressions.test_seven_city_false_pair) ... ok
++test_solver_against_600_exhaustive_instances (test_regressions.Regressions.test_solver_against_600_exhaustive_instances) ... ok
++
++----------------------------------------------------------------------
++Ran 18 tests in 1.745s
++
++OK
+diff --git a/test-results/spawn-test-results.txt b/test-results/spawn-test-results.txt
+new file mode 100644
+index 0000000..cabcace
+--- /dev/null
++++ b/test-results/spawn-test-results.txt
+@@ -0,0 +1,7 @@
++test_repeat_modes_accounting_and_payload (__main__.Regressions.test_repeat_modes_accounting_and_payload) ... ok
++test_parallel_transcripts_and_optima (__main__.Regressions.test_parallel_transcripts_and_optima) ... ok
++
++----------------------------------------------------------------------
++Ran 2 tests in 5.173s
++
++OK
+diff --git a/test-results/supplied-test-results.txt b/test-results/supplied-test-results.txt
+new file mode 100644
+index 0000000..9342229
+--- /dev/null
++++ b/test-results/supplied-test-results.txt
+@@ -0,0 +1,90 @@
++
++===============================================
++PROOF VALIDATION ADVERSARIAL TESTS
++===============================================
++
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Complete B&B replay valid.
++Reconstructed best path: [0, 3, 5, 4, 6, 2, 1, 0]
++Reconstructed best cost: 1813
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 87
++Expected semantic time: 0.00087
++PASS  | Honest transcript                   | expected=True actual=True
++Proof based validation
++PASS  | Incomplete Hamiltonian tour         | expected=False actual=False
++Proof based validation
++PASS  | Wrong proposed cost                 | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 9
++Expected semantic time: 9e-05
++PASS  | Fabricated lower bound              | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 9
++Expected semantic time: 9e-05
++PASS  | Fabricated reduction cost           | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 9
++Expected semantic time: 9e-05
++PASS  | Fabricated pruning decision         | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 10
++Expected semantic time: 0.0001
++PASS  | Missing legal child                 | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 47
++Expected semantic time: 0.00047
++PASS  | Truncated transcript                | expected=False actual=False
++Non-optimal solution test: 2587 vs optimum: 1813
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 87
++Expected semantic time: 0.00087
++PASS  | Valid non-optimal solution          | expected=False actual=False
++Proof based validation
++Validating transcript root
++Parallel hash validation
++Validating complete B&B transcript
++Semantic validator: test-validator
++Semantic validation rate: 100000.0 semantic units/s
++Semantic checks: 55
++Expected semantic time: 0.00055
++PASS  | Invalid incumbent history           | expected=False actual=False
++
++===============================================
++PASSED: 10 / 10
++===============================================
++
+diff --git a/test_regressions.py b/test_regressions.py
+new file mode 100644
+index 0000000..b5ceec3
+--- /dev/null
++++ b/test_regressions.py
+@@ -0,0 +1,170 @@
++"""python -m unittest -v test_regressions; or python test_regressions.py --spawn"""
++import contextlib,copy,io,itertools,multiprocessing,random,sys,unittest
++from types import SimpleNamespace
++from unittest.mock import patch
++import benchmark,proof_validation_tests as proofs,powWorker,utils,validation
++from mainFunctions import MainFunctions as Main
++from nodes import Node
++from scheduler import run_search
++from tspData import TspData
++from tspFunctions import TspFunction as F
++MATRIX=[[utils.inf,250,700,40,840],[250,utils.inf,120,790,640],[700,120,utils.inf,60,40],[40,790,60,utils.inf,600],[840,640,40,600,utils.inf]]
++def make_tsp(a):
++    with patch.object(F,'_make_tsp_matrix',return_value=copy.deepcopy(a)):return TspData(len(a))
++def proof_for(a):
++    with patch.object(proofs,'TspData',side_effect=lambda n,b:make_tsp(a)):return proofs.create_genuine_proof(len(a))
++def oracle(a):
++    return min(sum(a[x][y] for x,y in zip(p,p[1:])) for rest in itertools.permutations(range(1,len(a))) for p in [[0,*rest,0]])
++def cached_main(mode=0,size=5,workers=4,runs=1):
++    for k,v in {'hashes_per_second':1000.,'computations_per_second':100.,'initial_validations_per_second':1000.,'branch_validation_nodes_per_second':100.,'transcript_per_second':200.,'hash_validation_per_second':500.,'semantic_validation_per_second':100.}.items():setattr(Main,k,v)
++    Main.benchmarks_done=True;Main.benchmarked_validation_mode=mode;Main.benchmarked_num_of_cities=size
++    return Main(workers,size,runs,1,mode)
++class Regressions(unittest.TestCase):
++    def setUp(self):
++        self.output=contextlib.redirect_stdout(io.StringIO());self.output.__enter__()
++        Node.transcript=None;Node.found=False;Node.simulation_time=0
++    def tearDown(self):self.output.__exit__(None,None,None)
++    def test_original_five_city_false_pair(self):
++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX);fake=[0,1,2,3,4,0]
++        self.assertEqual(c,1030);self.assertEqual(sum(MATRIX[x][y] for x,y in zip(fake,fake[1:])),1870)
++        self.assertFalse(proofs.validate(t,fake,c,tr,vs,sigma,root))
++        self.assertFalse(validation._validate_transcript_semantics(t,tr,fake,c,False)[0])
++    def test_seven_city_false_pair(self):
++        t,p,c,tr,vs,sigma,root=proofs.create_genuine_proof();fake=p[:];fake[1],fake[2]=fake[2],fake[1]
++        self.assertEqual(c,1813);self.assertEqual(sum(t.matrix[x][y] for x,y in zip(fake,fake[1:])),2587)
++        self.assertFalse(proofs.validate(t,fake,c,tr,vs,sigma,root))
++    def test_equal_optimum_alternative_allowed(self):
++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX);reverse=list(reversed(p))
++        self.assertNotEqual(p,reverse);self.assertTrue(proofs.validate(t,reverse,c,tr,vs,sigma,root))
++    def test_malformed_vertices_costs_and_missing_edges(self):
++        t,p,c,tr,vs,sigma,root=proof_for(MATRIX)
++        paths=[None,'012340',[0,1,0],[0,1,1,3,4,0],[1,0,2,3,4,1]]
++        for v in (True,1.0,'1',None,-1,5,[],float('nan')):
++            q=p[:];q[1]=v;paths.append(q)
++        for q in paths:
++            with self.subTest(path=q):self.assertFalse(proofs.validate(t,q,c,tr,vs,sigma,root))
++        for cost in (True,'1030',None,float('nan'),float('inf'),-1,c+1):
++            with self.subTest(cost=cost):self.assertFalse(proofs.validate(t,p,cost,tr,vs,sigma,root))
++        t.matrix[p[0]][p[1]]=utils.inf;self.assertFalse(proofs.validate(t,p,c,tr,vs,sigma,root))
++    def test_original_adversarial_suite(self):
++        for name in sorted(n for n in dir(proofs) if n.startswith('test_')):
++            with self.subTest(name=name):self.assertEqual(getattr(proofs,name)(),name=='test_honest_proof')
++    def test_solver_against_600_exhaustive_instances(self):
++        rng=random.Random(20260909)
++        for n in range(3,9):
++            for j in range(100):
++                a=[[utils.inf]*n for _ in range(n)]
++                for x in range(n):
++                    for y in range(x+1,n):a[x][y]=a[y][x]=rng.randint(1,10 if j<30 else 1000)
++                t=make_tsp(a);F.tsp_solver(t)
++                with self.subTest(size=n,instance=j):self.assertEqual(t.best_cost,oracle(a))
++    def test_council_rejects_original_1050(self):
++        self.assertEqual([F.validate_branch(make_tsp(MATRIX),[0,c],1050)[0] for c in range(1,5)],[False,True,False,True])
++    def test_actual_parent_availability(self):
++        m=cached_main(size=3,workers=3)
++        for n in m.node_list:n.search_rate=1
++        trace=[]
++        run_search(Node.tsp,m.node_list,on_event=lambda k,t,n,p:trace.append((k,t,tuple(p.path))))
++        starts={p:t for k,t,p in trace if k=='dispatch'};ends={p:t for k,t,p in trace if k=='search_complete'}
++        self.assertEqual(ends[(0,)],1)
++        for p,t in starts.items():
++            self.assertEqual(ends[p]-t,1)
++            if len(p)>1:self.assertGreaterEqual(t,ends[p[:-1]])
++    def test_dependency_chain_three_seconds(self):
++        m=cached_main(workers=3)
++        for n in m.node_list:n.search_rate=1
++        def step(local,*args):
++            task=local.priority_queue.pop();depth=len(task.path)
++            if depth<3:
++                child=copy.copy(task);child.path=task.path+[depth];local.priority_queue.append(child)
++            else:local.best_cost=1;local.best_path=[0,1,2,0];local.best_node=task
++            return 1,1.,0.,not local.priority_queue
++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list)
++        self.assertEqual(result['time'],3);self.assertEqual(sum(n.computations for n in m.node_list),3)
++    def test_final_transcript_drained(self):
++        m=cached_main(workers=1);m.node_list[0].search_rate=1;tr=SimpleNamespace(steps=[])
++        def step(local,*args):
++            task=local.priority_queue.pop();local.best_cost=1;local.best_path=[0,1,0];local.best_node=task
++            tr.steps.extend([{},{}]);return 1,3.,2.,True
++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list,tr,1)
++        self.assertEqual(result['time'],3);self.assertEqual(result['transcript_records'],2);self.assertEqual(m.node_list[0].work,3)
++    def test_all_inflight_tasks_and_slow_logging_drained(self):
++        m=cached_main(workers=2)
++        for n in m.node_list:n.search_rate=1
++        tr=SimpleNamespace(steps=[])
++        def step(local,*args):
++            task=local.priority_queue.pop()
++            if task.path==[0]:
++                for v in (1,2):
++                    child=copy.copy(task);child.path=[0,v];local.priority_queue.append(child)
++                logs=0
++            else:
++                if task.path==[0,1]:local.best_cost=1;local.best_path=[0,1,0];local.best_node=task;logs=5
++                else:logs=1
++                tr.steps.extend([{}]*logs)
++            return 1,1.+logs,float(logs),not local.priority_queue
++        with patch.object(F,'tsp_solver',side_effect=step):result=run_search(Node.tsp,m.node_list,tr,1)
++        self.assertEqual(result['time'],8);self.assertEqual(result['transcript_records'],6);self.assertEqual(sum(n.computations for n in m.node_list),3)
++    def test_parallel_transcripts_and_optima(self):
++        rng=random.Random(7129);nonminimum=False
++        for trial in range(30):
++            size=5+trial%3;a=[[utils.inf]*size for _ in range(size)]
++            for x in range(size):
++                for y in range(x+1,size):a[x][y]=a[y][x]=rng.randint(1,100)
++            with patch.object(F,'_make_tsp_matrix',return_value=a):m=cached_main(1,size,4)
++            for n,r in zip(m.node_list,[1,3,7,11]):n.search_rate=r
++            trace=[]
++            def event(k,t,n,p):
++                if k=='search_complete':trace.append((tuple(p.path),p.cost))
++            result=run_search(Node.tsp,m.node_list,Node.transcript,Node.transcript_pouw_ratio,event)
++            self.assertEqual(Node.tsp.best_cost,oracle(a));self.assertEqual(result['transcript_records'],len(Node.transcript.steps))
++            self.assertTrue(proofs.validate(Node.tsp,Node.tsp.best_path,Node.tsp.best_cost,Node.transcript,m.node_list,m.transcript_sigma,m.transcript_root))
++            frontier={(0,):Node.tsp.tsp_root.cost}
++            for path,bound in trace:
++                if bound>min(frontier.values()):nonminimum=True
++                del frontier[path]
++                for record in Node.transcript.steps:
++                    d=record['data']
++                    if d['type']=='branch' and tuple(d['parent_path'])==path and not d['pruned']:frontier[tuple(d['child_path'])]=d['child_lower_bound']
++        self.assertTrue(nonminimum,'Must exercise nonserial completion order.')
++    def test_repeat_modes_accounting_and_payload(self):
++        for mode in (0,1,2):
++            for repeat in range(2):
++                m=cached_main(mode,runs=2);data=m.run_simulation();self.assertEqual(len(data['pouw']['runs']),2)
++                for r in data['pouw']['runs']:
++                    self.assertTrue(r['validation_valid']);self.assertEqual(len(r['winner']['path']),6)
++                    self.assertEqual(r['winner']['path'][0],r['winner']['path'][-1]);self.assertEqual(r['winner']['cost'],r['winner']['total_cost'])
++                    parts=sum(r[k] for k in ['search_compute_work','transcript_compute_work','proof_hash_compute_work','proof_semantic_compute_work','council_initial_compute_work','council_branch_compute_work'])
++                    self.assertAlmostEqual(r['total_compute_work'],parts);self.assertAlmostEqual(r['transcript_compute_work'],r['transcript_records']/200.)
++                last=data['pouw']['runs'][-1];self.assertEqual(last['winner']['path'],Node.tsp.best_path);self.assertEqual(last['winner']['cost'],Node.tsp.best_cost)
++                self.assertAlmostEqual(sum(n.work for n in m.node_list)/100.,last['pouw_compute_work'])
++                if mode!=1:self.assertIsNone(Node.transcript)
++    def test_original_solution_payload(self):
++        with patch.object(F,'_make_tsp_matrix',return_value=MATRIX):m=cached_main()
++        r=m.multiple_node_pouw_tsp();self.assertEqual(r['winner']['total_cost'],1030)
++        self.assertEqual(r['winner']['path'],[0,1,4,2,3,0]);self.assertEqual(r['winner']['name'],r['discovering_node'])
++    def test_pow_earliest_winner_counts_cursor_and_ties(self):
++        for rates,hashes,elapsed,counts,winner in [([100,100],[90,10],.1,[10,10],'node2'),([10,6],[1,None],.1,[1,0],'node1'),([10,20],[1,2],.1,[1,2],'node1')]:
++            m=cached_main(workers=2);Node.found=False;Node.simulation_time=0
++            for n,r in zip(m.node_list,rates):n.hash_rate=r
++            class Pool:
++                def __init__(self,*a,**k):pass
++                def __enter__(self):return self
++                def __exit__(self,*a):pass
++                def map(self,*a):return [dict(found=h is not None,hashes=h or r,nonce=(h or r)-1,extra_nonce=0,merkle_root='test',header_hash='0test') for r,h in zip(rates,hashes)]
++            with patch('mainFunctions.multiprocessing.Pool',Pool):r=m.multiple_node_pow(1)
++            self.assertEqual(r['winner']['name'],winner);self.assertEqual(r['simulation_time'],elapsed)
++            self.assertEqual([n.mining_count for n in m.node_list],counts);self.assertEqual([n.nonce for n in m.node_list],counts)
++    def test_pow_nonce_wrap(self):
++        m=cached_main(workers=1);n=m.node_list[0];n.nonce=2**32-1;old=n.merkle_root;powWorker.advance_state(n,2)
++        self.assertEqual(n.nonce,1);self.assertEqual(n.coinbase['extra_nonce'],1);self.assertNotEqual(n.merkle_root,old)
++    def test_invalid_run_rejected(self):
++        m=cached_main(1)
++        with patch.object(m,'multiple_node_pow',return_value={}),patch.object(m,'multiple_node_pouw_tsp',return_value={'validation_valid':False}):
++            with self.assertRaises(RuntimeError):m.run_simulation()
++    def test_benchmark_components(self):
++        for name in ('benchmark_tsp_pouw','benchmark_initial_validation','benchmark_branch_validation','benchmark_transcript','benchmark_hash_validation','benchmark_semantic_validation'):
++            with self.subTest(name=name):self.assertGreater(getattr(benchmark,name)(duration=.03,size=5),0)
++if __name__=='__main__':
++    if '--spawn' in sys.argv:sys.argv.remove('--spawn');multiprocessing.set_start_method('spawn')
++    unittest.main(verbosity=2)
+diff --git a/timing.txt b/timing.txt
+index 296d304..79ce2fc 100644
+--- a/timing.txt
++++ b/timing.txt
+@@ -24,3 +24,4 @@ run_settings total: 34.727s
+ run_settings total: 34.595s
+ run_settings total: 31.177s
+ run_settings total: 33.956s
++run_settings total: 14.387s
+diff --git a/validation.py b/validation.py
+index dd23b84..2a484ad 100644
+--- a/validation.py
++++ b/validation.py
+@@ -4,6 +4,8 @@ from tspData import TspData
+ from tspFunctions import TspFunction
+ import multiprocessing
+ import utils
++import math
++from numbers import Real
+ 
+ 
+ def council_validation(
+@@ -205,83 +207,7 @@ def _validate_node(args):
+     # Extract the validation arguments.
+     tsp, proposed_path, proposed_cost = args
+ 
+-    # Assume the proposed solution is valid until
+-    # one of the validation checks fails.
+-    valid = True
+-
+-    # --------------------------------------------------------
+-    # PATH STRUCTURE VALIDATION
+-    # --------------------------------------------------------
+-
+-    # The path must exist.
+-    if not proposed_path:
+-        valid = False
+-
+-    # The path must contain every city exactly once,
+-    # plus the repeated starting city at the end.
+-    elif len(proposed_path) != tsp.size + 1:
+-        valid = False
+-
+-    # The tour must start and end at vertex 0.
+-    elif (
+-        proposed_path[0] != 0
+-        or proposed_path[-1] != 0
+-    ):
+-        valid = False
+-
+-    # Every city index must be valid.
+-    elif any(
+-        vertex < 0 or vertex >= tsp.size
+-        for vertex in proposed_path[:-1]
+-    ):
+-        valid = False
+-
+-    # Every city must appear exactly once before
+-    # returning to the starting city.
+-    elif len(set(proposed_path[:-1])) != tsp.size:
+-        valid = False
+-
+-    # --------------------------------------------------------
+-    # PATH COST VALIDATION
+-    # --------------------------------------------------------
+-
+-    else:
+-
+-        total_cost = 0
+-
+-        for i in range(len(proposed_path) - 1):
+-
+-            source = proposed_path[i]
+-            destination = proposed_path[i + 1]
+-
+-            edge_cost = tsp.matrix[source][destination]
+-
+-            # The proposed path cannot contain a missing edge.
+-            if edge_cost == utils.inf:
+-                valid = False
+-                break
+-
+-            total_cost += edge_cost
+-
+-        # The independently calculated path cost must
+-        # match the claimed solution cost.
+-        if valid and total_cost != proposed_cost:
+-            valid = False
+-
+-    return valid
+-
+-
+-def _parallel_branch_validation(
+-    tsp,
+-    council,
+-    proposed_cost
+-):
+-    # Generate the initial Branch and Bound search branches.
+-    branches = TspFunction.create_initial_branches(tsp)
+-
+-    # Store the multiprocessing.Process objects so they can
+-    # later be waited on with join().
+-    processes = []
++    return _validate_proposed_tour(tsp, proposed_path, proposed_cost)
+ 
+ 
+ def _parallel_branch_validation(
+@@ -515,10 +441,7 @@ def proof_based_validation(
+     # 1. HAMILTONIAN CYCLE
+     # =========================================================
+ 
+-    if not _validate_hamiltonian_cycle(
+-        tsp,
+-        path
+-    ):
++    if not _validate_proposed_tour(tsp, path, proposed_cost):
+         return empty_result
+ 
+     # One semantic unit for Hamiltonian validation.
+@@ -709,6 +632,9 @@ def _validate_transcript_semantics(
+     if transcript is None:
+         return False, 0, None, utils.inf
+ 
++    if not _validate_proposed_tour(tsp, proposed_path, proposed_cost):
++        return False, 0, None, utils.inf
++
+     computations = 0
+ 
+     expected_incumbent = utils.inf
+@@ -796,26 +722,11 @@ def _validate_transcript_semantics(
+ 
+             return fail()
+ 
+-        # =====================================================
+-        # VERIFY B&B PRIORITY-QUEUE ORDER
+-        # =====================================================
+-        #
+-        # The real solver always pops a node having the
+-        # smallest lower bound currently present in the queue.
+-        #
+-        # Equal lower bounds may be processed in either order.
+-
+-        minimum_lower_bound = min(
+-            node.cost
+-            for node in open_nodes.values()
+-        )
+-
+-        if (
+-            current_node.cost
+-            != minimum_lower_bound
+-        ):
+-
+-            return fail()
++        # Completion order may differ from dispatch priority in a parallel
++        # search. Soundness requires a generated open node, valid reductions,
++        # incumbent-consistent pruning and an exhausted frontier; it does not
++        # require globally minimum-bound completion order. This verifier checks
++        # the search result, not the scheduler's resource/timing claims.
+ 
+         # =====================================================
+         # EXPANSION
+@@ -1753,36 +1664,34 @@ def _validate_hamiltonian_cycle(
+             "Validating hamiltonian cycle"
+         )
+ 
+-    # A path must exist.
+-    if not path:
++    if not isinstance(path, (list, tuple)) or len(path) != tsp.size + 1:
+         return False
+-
+-    # Hamiltonian cycle over n cities contains
+-    # n + 1 vertices because city 0 is repeated.
+-    if len(path) != tsp.size + 1:
++    # bool and float vertices must not masquerade as integer city indices.
++    if any(type(vertex) is not int or not 0 <= vertex < tsp.size for vertex in path):
+         return False
++    return (path[0] == 0 and path[-1] == 0
++            and len(set(path[:-1])) == tsp.size)
+ 
+-    # Search always starts and ends at city 0.
+-    if path[0] != 0 or path[-1] != 0:
+-        return False
+ 
+-    # Every city must be valid.
+-    if any(
+-        vertex < 0
+-        or vertex >= tsp.size
+-        for vertex in path[:-1]
+-    ):
+-        return False
++def _validate_proposed_tour(tsp, path, proposed_cost):
++    """Validate the actual submitted cycle, independently of its transcript.
+ 
+-    # Every city must occur exactly once
+-    # before returning to city 0.
+-    if (
+-        len(set(path[:-1]))
+-        != tsp.size
+-    ):
++    Alternative equal-cost optimum tours are permitted by the protocol.
++    """
++    if not _validate_hamiltonian_cycle(tsp, path, debug=False):
++        return False
++    if isinstance(proposed_cost, bool) or not isinstance(proposed_cost, Real):
++        return False
++    if not math.isfinite(proposed_cost):
+         return False
++    total = 0
++    for source, destination in zip(path, path[1:]):
++        edge = tsp.matrix[source][destination]
++        if isinstance(edge, bool) or not isinstance(edge, Real) or not math.isfinite(edge):
++            return False
++        total += edge
++    return total == proposed_cost
+ 
+-    return True
+ 
+ def _validate_transcript_root(
+     tsp,

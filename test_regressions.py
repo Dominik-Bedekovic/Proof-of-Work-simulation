@@ -140,9 +140,35 @@ class Regressions(unittest.TestCase):
                 self.assertAlmostEqual(sum(n.work for n in m.node_list)/100.,last['pouw_compute_work'])
                 if mode!=1:self.assertIsNone(Node.transcript)
     def test_original_solution_payload(self):
-        with patch.object(F,'_make_tsp_matrix',return_value=MATRIX):m=cached_main()
-        r=m.multiple_node_pouw_tsp();self.assertEqual(r['winner']['total_cost'],1030)
-        self.assertEqual(r['winner']['path'],[0,1,4,2,3,0]);self.assertEqual(r['winner']['name'],r['discovering_node'])
+        with patch.object(
+            F,
+            '_make_tsp_matrix',
+            return_value=MATRIX
+        ):
+            m = cached_main()
+
+        r = m.multiple_node_pouw_tsp()
+
+        self.assertEqual(
+            r['winner']['total_cost'],
+            1030
+        )
+
+        path = r['winner']['path']
+
+        # Allow either orientation of the same symmetric optimum.
+        self.assertIn(
+            path,
+            [
+                [0, 1, 4, 2, 3, 0],
+                [0, 3, 2, 4, 1, 0]
+            ]
+        )
+
+        self.assertEqual(
+            r['winner']['name'],
+            r['discovering_node']
+        )
     def test_pow_earliest_winner_counts_cursor_and_ties(self):
         for rates,hashes,elapsed,counts,winner in [([100,100],[90,10],.1,[10,10],'node2'),([10,6],[1,None],.1,[1,0],'node1'),([10,20],[1,2],.1,[1,2],'node1')]:
             m=cached_main(workers=2);Node.found=False;Node.simulation_time=0

@@ -2133,7 +2133,7 @@ def start_gui():
 
         benchmark_settings_frame,
 
-        from_=1,
+        from_=3,
 
         to=20,
 
@@ -2455,7 +2455,7 @@ def start_gui():
 
         pouw_settings_frame,
 
-        from_=0,
+        from_=3,
 
         to=15,
 

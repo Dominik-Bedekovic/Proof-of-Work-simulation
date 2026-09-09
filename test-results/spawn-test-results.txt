@@ -1,7 +1,9 @@
-test_repeat_modes_accounting_and_payload (__main__.Regressions.test_repeat_modes_accounting_and_payload) ... ok
-test_parallel_transcripts_and_optima (__main__.Regressions.test_parallel_transcripts_and_optima) ... ok
+test_repeat_modes_accounting_and_payload (__main__.Regressions.test_repeat_modes_accounting_and_payload)
+Check repeated runs, state resets, returned tours, and component work sums ... ok
+test_parallel_transcripts_and_optima (__main__.Regressions.test_parallel_transcripts_and_optima)
+Check heterogeneous-worker schedules against enumeration and semantic ... ok
 
 ----------------------------------------------------------------------
-Ran 2 tests in 5.173s
+Ran 2 tests in 5.210s
 
 OK

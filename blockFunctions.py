@@ -1,42 +1,29 @@
+"""Construct the simplified transaction digest and block-header hashes."""
+
 import utils
 
 
 class BlockFunctions:
+    """Hash the simplified transaction/coinbase data and block-header fields."""
 
     @staticmethod
     def calculate_merkle_root(block_transactions, node_coinbase):
-        # Combine all block transactions into one string.
-        transaction_string = ''
-
+        """Hash concatenated transactions and coinbase values; this is not a full
+        Merkle tree.
+        """
+        transaction_string = ""
         for transaction in block_transactions:
             transaction_string += str(transaction)
-
-        # Combine the values of the coinbase transaction into one string.
-        coinbase_string = ''
-
+        coinbase_string = ""
         for value in node_coinbase.values():
             coinbase_string += str(value)
 
-        # Combine the transaction and coinbase data.
+        # This simplified digest is sufficient for distinct simulated mining inputs.
         merkle_root = transaction_string + coinbase_string
-
-        # Hash the combined data to create the Merkle root.
         return utils.create_hash(merkle_root)
 
     @staticmethod
-    def create_header_hash(
-        block_prev_hash,
-        block_timestamp,
-        merkle_root,
-        node_nonce
-    ):
-        # Combine the block header fields into one string.
-        data = (
-            block_prev_hash
-            + block_timestamp
-            + merkle_root
-            + str(node_nonce)
-        )
-
-        # Hash the block header using SHA-256.
+    def create_header_hash(block_prev_hash, block_timestamp, merkle_root, node_nonce):
+        """Return SHA-256 of the concatenated header fields and nonce."""
+        data = block_prev_hash + block_timestamp + merkle_root + str(node_nonce)
         return utils.create_hash(data)

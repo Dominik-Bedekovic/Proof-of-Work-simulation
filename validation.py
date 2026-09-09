@@ -1,4 +1,4 @@
-from multiprocessing.util import debug
+"""Check proposed tours through council search or complete B&B transcript replay."""
 
 from tspData import TspData
 from tspFunctions import TspFunction
@@ -14,36 +14,18 @@ def council_validation(
     proposed_path,
     proposed_cost,
     initial_validations_per_second,
-    branch_validation_nodes_per_second
+    branch_validation_nodes_per_second,
 ):
+    """Check the tour and partition the search across validators; require unanimous
+    approval.
+    """
 
-    # --------------------------------------------------------
-    # INITIAL VALIDATION
-    # --------------------------------------------------------
-
-    arguments = [
-        (
-            tsp,
-            proposed_path,
-            proposed_cost
-        )
-        for _ in council
-    ]
-
+    # Each council member first checks the complete submitted tour.
+    arguments = [(tsp, proposed_path, proposed_cost) for _ in council]
     with multiprocessing.Pool() as pool:
-
-        results = pool.map(
-            _validate_node,
-            arguments
-        )
-
-    # Each result is now simply True / False.
+        results = pool.map(_validate_node, arguments)
     initial_votes = sum(results)
-
-    # Every council member performs exactly one complete
-    # proposed-tour validation.
     initial_validations = len(council)
-
     if initial_validations == 0:
         return {
             "valid": False,
@@ -52,188 +34,63 @@ def council_validation(
             "initial_compute_work": 0.0,
             "branch_compute_work": 0.0,
             "compute_work": 0.0,
-            "validation_time": 0.0
+            "validation_time": 0.0,
         }
 
-    # --------------------------------------------------------
-    # INITIAL VALIDATION SIMULATED TIME
-    # --------------------------------------------------------
-
-    # All council members perform the initial validation
-    # in parallel. Therefore the stage finishes when the
-    # slowest validator completes its one validation.
+    # These checks run in parallel, so the slowest validator sets elapsed time.
     initial_validation_time = max(
-        1.0 / node.initial_validation_rate
-        for node in council
-        if node.initial_validation_rate > 0
-    )
-
-    for index, node in enumerate(council):
-
-        if node.initial_validation_rate <= 0:
-            raise RuntimeError(
-                "Council initial validation rate must be positive."
-            )
-
-        print(
-            "INITIAL COUNCIL VALIDATOR",
-            index,
-            "| rate:",
-            node.initial_validation_rate,
-            "validations/s",
-            "| simulated time:",
-            1.0 / node.initial_validation_rate,
-            "s"
+        (
+            1.0 / node.initial_validation_rate
+            for node in council
+            if node.initial_validation_rate > 0
         )
-
-    print(
-        "INITIAL COUNCIL TIME:",
-        initial_validation_time,
-        "s"
     )
-
-    # --------------------------------------------------------
-    # INITIAL VALIDATION REFERENCE COMPUTE WORK
-    # --------------------------------------------------------
-
-    # Unit:
-    #
-    # complete validations
-    # --------------------
-    # complete validations / second
-    #
-    # = reference-machine seconds
-    initial_compute_work = (
-        initial_validations
-        / initial_validations_per_second
-    )
-
-    # --------------------------------------------------------
-    # ULTIMATE / BRANCH VALIDATION
-    # --------------------------------------------------------
-
+    for index, node in enumerate(council):
+        if node.initial_validation_rate <= 0:
+            raise RuntimeError("Council initial validation rate must be positive.")
+    initial_compute_work = initial_validations / initial_validations_per_second
     (
         ultimate_votes,
         ultimate_voters,
         branch_validation_nodes,
-        ultimate_validation_time
-    ) = _parallel_branch_validation(
-        tsp,
-        council,
-        proposed_cost
-    )
-
-    # --------------------------------------------------------
-    # BRANCH VALIDATION REFERENCE COMPUTE WORK
-    # --------------------------------------------------------
-
-    # Unit:
-    #
-    # examined B&B validation nodes
-    # -----------------------------
-    # examined B&B validation nodes / second
-    #
-    # = reference-machine seconds
-    branch_compute_work = (
-        branch_validation_nodes
-        / branch_validation_nodes_per_second
-    )
-
-    # --------------------------------------------------------
-    # TOTAL COUNCIL COMPUTATIONAL WORK
-    # --------------------------------------------------------
-
-    council_compute_work = (
-        initial_compute_work
-        + branch_compute_work
-    )
-
-    # --------------------------------------------------------
-    # TOTAL SIMULATED VALIDATION TIME
-    # --------------------------------------------------------
-
-    # Initial validation and branch validation happen
-    # sequentially, so their stage times are added.
-    total_validation_time = (
-        initial_validation_time
-        + ultimate_validation_time
-    )
-
-    # --------------------------------------------------------
-    # COUNCIL DECISION
-    # --------------------------------------------------------
-
+        ultimate_validation_time,
+    ) = _parallel_branch_validation(tsp, council, proposed_cost)
+    branch_compute_work = branch_validation_nodes / branch_validation_nodes_per_second
+    council_compute_work = initial_compute_work + branch_compute_work
+    total_validation_time = initial_validation_time + ultimate_validation_time
     total_votes = len(council)
-
     council_result = _council_voting(
-        initial_votes,
-        ultimate_votes,
-        total_votes,
-        ultimate_voters
+        initial_votes, ultimate_votes, total_votes, ultimate_voters
     )
-
-    # --------------------------------------------------------
-    # RETURN
-    # --------------------------------------------------------
-
     return {
         "valid": council_result,
-
-        # Raw units
-        "initial_validations":
-            initial_validations,
-
-        "branch_validation_nodes":
-            branch_validation_nodes,
-
-        # Normalized reference-machine work
-        "initial_compute_work":
-            initial_compute_work,
-
-        "branch_compute_work":
-            branch_compute_work,
-
-        "compute_work":
-            council_compute_work,
-
-        # Simulated elapsed time
-        "validation_time":
-            total_validation_time
+        "initial_validations": initial_validations,
+        "branch_validation_nodes": branch_validation_nodes,
+        "initial_compute_work": initial_compute_work,
+        "branch_compute_work": branch_compute_work,
+        "compute_work": council_compute_work,
+        "validation_time": total_validation_time,
     }
 
 
 def _validate_node(args):
-
-    # Extract the validation arguments.
+    """Adapt one proposed tour to the argument tuple expected by multiprocessing."""
     tsp, proposed_path, proposed_cost = args
-
     return _validate_proposed_tour(tsp, proposed_path, proposed_cost)
 
 
-def _parallel_branch_validation(
-    tsp,
-    council,
-    proposed_cost
-):
-
+def _parallel_branch_validation(tsp, council, proposed_cost):
+    """Assign disjoint initial branches and aggregate votes, node counts, and slowest
+    time.
+    """
     branches = TspFunction.create_initial_branches(tsp)
-
     processes = []
     result_queue = multiprocessing.Queue()
-
     num_validators = len(council)
 
-    branch_slices = [
-        branches[i::num_validators]
-        for i in range(num_validators)
-    ]
-
-    # --------------------------------------------------------
-    # START VALIDATION PROCESSES
-    # --------------------------------------------------------
-
+    # Branches are disjoint, not replicated votes on the same search work.
+    branch_slices = [branches[i::num_validators] for i in range(num_validators)]
     for node_index, branch_slice in enumerate(branch_slices):
-
         process = multiprocessing.Process(
             target=_branch_worker,
             args=(
@@ -242,1435 +99,440 @@ def _parallel_branch_validation(
                 tsp,
                 branch_slice,
                 result_queue,
-                proposed_cost
-            )
+                proposed_cost,
+            ),
         )
-
         processes.append(process)
         process.start()
-
-    # --------------------------------------------------------
-    # WAIT FOR VALIDATORS
-    # --------------------------------------------------------
-
     for process in processes:
         process.join()
-
-    # --------------------------------------------------------
-    # COLLECT RESULTS
-    # --------------------------------------------------------
-
     results = []
-
     for _ in processes:
-        results.append(
-            result_queue.get()
-        )
-
+        results.append(result_queue.get())
     ultimate_votes = 0
     ultimate_voters = 0
-
-    # Raw number of B&B nodes examined during
-    # branch validation.
     ultimate_computations = 0
-
     ultimate_validation_time = 0.0
-
-    # --------------------------------------------------------
-    # PROCESS RESULTS
-    # --------------------------------------------------------
-
-    for (
-        node_index,
-        valid,
-        computations,
-        branch_validation_rate
-    ) in results:
-
+    for node_index, valid, computations, branch_validation_rate in results:
         ultimate_computations += computations
 
-        # A validator with no assigned B&B work does not vote.
+        # An unassigned worker contributes neither a vote nor branch-processing time.
         if computations == 0:
             continue
-
         if branch_validation_rate <= 0:
-            raise RuntimeError(
-                "Council branch validation rate must be positive."
-            )
-
-        # B&B validation nodes
-        # --------------------
-        # B&B validation nodes / second
-        #
-        # = simulated seconds
-        node_validation_time = (
-            computations
-            / branch_validation_rate
-        )
-
-        print(
-            "COUNCIL VALIDATOR",
-            node_index,
-            "| B&B nodes:",
-            computations,
-            "| rate:",
-            branch_validation_rate,
-            "nodes/s",
-            "| simulated time:",
-            node_validation_time,
-            "s"
-        )
-
-        ultimate_validation_time = max(
-            ultimate_validation_time,
-            node_validation_time
-        )
-
+            raise RuntimeError("Council branch validation rate must be positive.")
+        node_validation_time = computations / branch_validation_rate
+        ultimate_validation_time = max(ultimate_validation_time, node_validation_time)
         ultimate_voters += 1
-
         if valid:
             ultimate_votes += 1
-
-        print(
-            "ULTIMATE COUNCIL TIME:",
-            ultimate_validation_time,
-            "s"
-        )
-
     return (
         ultimate_votes,
         ultimate_voters,
         ultimate_computations,
-        ultimate_validation_time
+        ultimate_validation_time,
     )
+
 
 def _branch_worker(
-    node_index,
-    branch_validation_rate,
-    tsp,
-    branches,
-    result_queue,
-    proposed_cost
+    node_index, branch_validation_rate, tsp, branches, result_queue, proposed_cost
 ):
-
+    """Search all assigned branches and send one aggregate result to the parent
+    process.
+    """
     valid = True
     computations = 0
-
-    # --------------------------------------------------------
-    # VALIDATE ASSIGNED BRANCHES
-    # --------------------------------------------------------
-
     for branch in branches:
-
-        (
-            branch_valid,
-            branch_computations
-        ) = TspFunction.validate_branch(
-            tsp,
-            branch,
-            proposed_cost
+        branch_valid, branch_computations = TspFunction.validate_branch(
+            tsp, branch, proposed_cost
         )
-
-        # Raw number of B&B nodes examined.
         computations += branch_computations
-
         if not branch_valid:
             valid = False
-
-    # --------------------------------------------------------
-    # RETURN RESULT
-    # --------------------------------------------------------
-
-    result_queue.put(
-        (
-            node_index,
-            valid,
-            computations,
-            branch_validation_rate
-        )
-    )
+    result_queue.put((node_index, valid, computations, branch_validation_rate))
 
 
-def _council_voting(
-    initial_votes,
-    ultimate_votes,
-    total_votes,
-    ultimate_voters
-):
-    # The council cannot accept the solution if no validator
-    # participated in the ultimate validation stage.
+def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
+    """Approve only when every participating validator approves both required stages."""
     if ultimate_voters == 0:
         return False
 
-    # Both validation stages require unanimous approval.
+    # Any branch finding a cheaper tour must be able to reject the proposal.
     if initial_votes == total_votes and ultimate_votes == ultimate_voters:
         return True
-
     return False
 
+
 def proof_based_validation(
-    tsp,
-    path,
-    proposed_cost,
-    transcript,
-    validators,
-    transcript_sigma,
-    transcript_root
+    tsp, path, proposed_cost, transcript, validators, transcript_sigma, transcript_root
 ):
-
-    print("Proof based validation")
-
+    """Validate the submitted cost and full certificate; return decision, counts, and
+    modeled times.
+    """
     empty_result = {
         "valid": False,
         "hash_checks": 0,
         "semantic_checks": 0,
         "hash_time": 0.0,
         "semantic_time": 0.0,
-        "validation_time": 0.0
+        "validation_time": 0.0,
     }
-
     if transcript is None:
         return empty_result
-
     if not validators:
         return empty_result
-
     semantic_setup_checks = 0
 
-    # =========================================================
-    # 1. HAMILTONIAN CYCLE
-    # =========================================================
-
+    # Validate the submitted path's actual edge sum, not just the transcript's cost.
     if not _validate_proposed_tour(tsp, path, proposed_cost):
         return empty_result
-
-    # One semantic unit for Hamiltonian validation.
     semantic_setup_checks += 1
-
-    # =========================================================
-    # 2. AUTHENTICATED ROOT
-    # =========================================================
-
     if not _validate_transcript_root(
-        tsp,
-        transcript,
-        transcript_sigma,
-        transcript_root
+        tsp, transcript, transcript_sigma, transcript_root
     ):
         return empty_result
+    root_children = transcript.root["data"].get("children", [])
 
-    root_children = (
-        transcript
-        .root["data"]
-        .get(
-            "children",
-            []
-        )
+    # These composite setup units match the semantic benchmark's counting rule.
+    semantic_setup_checks += 1 + len(root_children)
+    hash_valid, hash_checks, hash_time = _parallel_hash_validation(
+        transcript, validators, transcript_root
     )
-
-    # One fixed root-validation unit
-    # plus one unit for every independently
-    # reconstructed root child.
-    semantic_setup_checks += (
-        1
-        + len(root_children)
-    )
-
-    # =========================================================
-    # 3. HASH CHAIN
-    # =========================================================
-
-    (
-        hash_valid,
-        hash_checks,
-        hash_time
-    ) = _parallel_hash_validation(
-        transcript,
-        validators,
-        transcript_root
-    )
-
     if not hash_valid:
-
         result = empty_result.copy()
-
-        result["hash_checks"] = (
-            hash_checks
-        )
-
-        result["hash_time"] = (
-            hash_time
-        )
-
-        result["validation_time"] = (
-            hash_time
-        )
-
+        result["hash_checks"] = hash_checks
+        result["hash_time"] = hash_time
+        result["validation_time"] = hash_time
         return result
-
-    # =========================================================
-    # 4. COMPLETE B&B REPLAY
-    # =========================================================
-
-    (
-        semantic_valid,
-        replay_checks,
-        reconstructed_path,
-        reconstructed_cost
-    ) = _validate_transcript_semantics(
-        tsp,
-        transcript,
-        path,
-        proposed_cost
+    semantic_valid, replay_checks, reconstructed_path, reconstructed_cost = (
+        _validate_transcript_semantics(tsp, transcript, path, proposed_cost)
     )
+    semantic_checks = semantic_setup_checks + replay_checks
 
-    # Total semantic units:
-    #
-    # 1 Hamiltonian check
-    # 1 fixed root check
-    # N reconstructed root children
-    # M replayed transcript records
-    semantic_checks = (
-        semantic_setup_checks
-        + replay_checks
-    )
-
-    # ---------------------------------------------------------
-    # Semantic validation is sequential.
-    # ---------------------------------------------------------
-
-    semantic_validator = (
-        validators[0]
-    )
-
-    print(
-        "Semantic validator:",
-        semantic_validator.name
-    )
-
-    print(
-        "Semantic validation rate:",
-        semantic_validator.semantic_validation_rate,
-        "semantic units/s"
-    )
-
-    print(
-        "Semantic checks:",
-        semantic_checks
-    )
-
-    print(
-        "Expected semantic time:",
-        semantic_checks
-        / semantic_validator.semantic_validation_rate
-    )
-
-    if (
-        semantic_validator
-        .semantic_validation_rate
-        <= 0
-    ):
-        raise RuntimeError(
-            "Proof semantic validation rate "
-            "must be positive."
-        )
-
-    semantic_time = (
-        semantic_checks
-        / semantic_validator
-          .semantic_validation_rate
-    )
-
-    # ---------------------------------------------------------
-    # Invalid proof still consumed semantic work.
-    # ---------------------------------------------------------
-
+    # Hash slices are parallel, but complete semantic replay uses one validator.
+    semantic_validator = validators[0]
+    if semantic_validator.semantic_validation_rate <= 0:
+        raise RuntimeError("Proof semantic validation rate must be positive.")
+    semantic_time = semantic_checks / semantic_validator.semantic_validation_rate
     if not semantic_valid:
-
         return {
             "valid": False,
             "hash_checks": hash_checks,
             "semantic_checks": semantic_checks,
             "hash_time": hash_time,
             "semantic_time": semantic_time,
-            "validation_time":
-                hash_time
-                + semantic_time
+            "validation_time": hash_time + semantic_time,
         }
-
-    # =========================================================
-    # SUCCESS
-    # =========================================================
-
-    total_time = (
-        hash_time
-        + semantic_time
-    )
-
+    total_time = hash_time + semantic_time
     return {
         "valid": True,
         "hash_checks": hash_checks,
         "semantic_checks": semantic_checks,
         "hash_time": hash_time,
         "semantic_time": semantic_time,
-        "validation_time": total_time
+        "validation_time": total_time,
     }
 
+
+# The optional compatibility argument is retained for older callers; validation is silent.
 def _validate_transcript_semantics(
-    tsp,
-    transcript,
-    proposed_path,
-    proposed_cost,
-    debug=True
+    tsp, transcript, proposed_path, proposed_cost, debug=True
 ):
+    """Reconstruct every generated node, pruning decision, and incumbent until the
+    frontier is empty.
 
-    if debug:
-        print(
-            "Validating complete B&B transcript"
-        )
-
+    Completion order may differ from dispatch priority. This checks the search
+    result, not worker timing or physical work. Equivalent optimum tours are
+    permitted.
+    """
     if transcript is None:
-        return False, 0, None, utils.inf
-
+        return (False, 0, None, utils.inf)
     if not _validate_proposed_tour(tsp, proposed_path, proposed_cost):
-        return False, 0, None, utils.inf
-
+        return (False, 0, None, utils.inf)
     computations = 0
-
     expected_incumbent = utils.inf
     expected_best_path = None
 
-    # ---------------------------------------------------------
-    # OPEN SEARCH FRONTIER
-    #
-    # Every node placed here MUST eventually be:
-    #
-    # - expanded
-    # - pop-time pruned
-    # - completed
-    # - or identified as a dead end
-    #
-    # Otherwise the transcript is incomplete.
-    # ---------------------------------------------------------
-
-    open_nodes = {
-        tuple(tsp.tsp_root.path):
-            tsp.tsp_root
-    }
-
+    # Every generated, unpruned node must eventually be accounted for.
+    open_nodes = {tuple(tsp.tsp_root.path): tsp.tsp_root}
     steps = transcript.steps
     index = 0
 
     def fail():
-        return (
-            False,
-            computations,
-            None,
-            utils.inf
-        )
-
-    # =========================================================
-    # PROCESS COMPLETE TRANSCRIPT
-    # =========================================================
+        """Return a failed replay result with the number of semantic records checked so
+        far.
+        """
+        return (False, computations, None, utils.inf)
 
     while index < len(steps):
-
         data = steps[index]["data"]
-
         step_type = data.get("type")
-
-        # -----------------------------------------------------
-        # Determine which popped B&B node this transcript
-        # record refers to.
-        # -----------------------------------------------------
-
         if step_type == "branch":
-
-            node_path = tuple(
-                data["parent_path"]
-            )
-
+            node_path = tuple(data["parent_path"])
         elif step_type == "prune":
-
-            node_path = tuple(
-                data["path"]
-            )
-
+            node_path = tuple(data["path"])
         elif step_type == "complete":
-
-            node_path = tuple(
-                data["parent_path"]
-            )
-
+            node_path = tuple(data["parent_path"])
         elif step_type == "dead_end":
-
-            node_path = tuple(
-                data["path"]
-            )
-
+            node_path = tuple(data["path"])
         else:
-
             return fail()
 
-        current_node = open_nodes.get(
-            node_path
-        )
-
-        # The node must actually exist in the verifier's
-        # independently reconstructed frontier.
+        # Parallel completion need not follow minimum-bound order. The node must
+        # still belong to the independently reconstructed frontier.
+        current_node = open_nodes.get(node_path)
         if current_node is None:
-
             return fail()
-
-        # Completion order may differ from dispatch priority in a parallel
-        # search. Soundness requires a generated open node, valid reductions,
-        # incumbent-consistent pruning and an exhausted frontier; it does not
-        # require globally minimum-bound completion order. This verifier checks
-        # the search result, not the scheduler's resource/timing claims.
-
-        # =====================================================
-        # EXPANSION
-        # =====================================================
-
         if step_type == "branch":
-
-            # The solver would have pop-time pruned this node
-            # before expansion.
-            if (
-                current_node.cost
-                >= expected_incumbent
-            ):
-
+            if current_node.cost >= expected_incumbent:
+                return fail()
+            if current_node.visited == tsp.size - 1:
                 return fail()
 
-            # A complete node must be handled by the
-            # complete/dead-end case instead.
-            if (
-                current_node.visited
-                == tsp.size - 1
-            ):
-
-                return fail()
-
-            # -------------------------------------------------
-            # Independently determine EVERY legal child.
-            # -------------------------------------------------
-
+            # Recompute every legal child so omitted branches cannot hide a better tour.
             expected_destinations = []
-
-            for destination in range(
-                current_node.size
-            ):
-
-                if (
-                    current_node.matrix[
-                        current_node.vertex
-                    ][destination]
-                    == utils.inf
-                ):
-
+            for destination in range(current_node.size):
+                if current_node.matrix[current_node.vertex][destination] == utils.inf:
                     continue
-
-                if (
-                    destination
-                    in current_node.path
-                ):
-
+                if destination in current_node.path:
                     continue
-
-                expected_destinations.append(
-                    destination
-                )
-
-            # A node without children should have produced
-            # a dead_end event.
+                expected_destinations.append(destination)
             if not expected_destinations:
-
                 return fail()
-
-            # The parent is now being processed.
             del open_nodes[node_path]
 
-            # -------------------------------------------------
-            # Require EXACTLY one authenticated branch record
-            # for EVERY legal child.
-            #
-            # The real solver iterates destinations in
-            # ascending integer order, so we verify that order.
-            # -------------------------------------------------
-
+            # Require exactly one record per legal child in the solver's neighbor order.
             for destination in expected_destinations:
-
                 if index >= len(steps):
-
                     return fail()
-
-                branch_data = (
-                    steps[index]["data"]
-                )
-
+                branch_data = steps[index]["data"]
                 computations += 1
-
-                if (
-                    branch_data.get("type")
-                    != "branch"
-                ):
-
+                if branch_data.get("type") != "branch":
                     return fail()
-
-                if (
-                    tuple(
-                        branch_data[
-                            "parent_path"
-                        ]
-                    )
-                    != node_path
-                ):
-
+                if tuple(branch_data["parent_path"]) != node_path:
                     return fail()
-
-                if (
-                    branch_data[
-                        "parent_vertex"
-                    ]
-                    != current_node.vertex
-                ):
-
+                if branch_data["parent_vertex"] != current_node.vertex:
                     return fail()
-
-                if (
-                    branch_data[
-                        "parent_lower_bound"
-                    ]
-                    != current_node.cost
-                ):
-
+                if branch_data["parent_lower_bound"] != current_node.cost:
                     return fail()
-
-                if (
-                    branch_data[
-                        "selected_neighbour"
-                    ]
-                    != destination
-                ):
-
+                if branch_data["selected_neighbour"] != destination:
                     return fail()
-
-                # ---------------------------------------------
-                # Reconstruct the B&B child independently.
-                # ---------------------------------------------
-
-                reduced_edge_cost = (
-                    current_node.matrix[
-                        current_node.vertex
-                    ][destination]
+                reduced_edge_cost = current_node.matrix[current_node.vertex][
+                    destination
+                ]
+                expected_edge_cost = tsp.matrix[current_node.vertex][destination]
+                if expected_edge_cost == utils.inf:
+                    return fail()
+                expected_child = TspFunction._create_child(
+                    current_node, tsp.matrix, current_node.vertex, destination
                 )
-
-                expected_edge_cost = (
-                    tsp.matrix[
-                        current_node.vertex
-                    ][destination]
-                )
-
-                if (
-                    expected_edge_cost
-                    == utils.inf
-                ):
-
-                    return fail()
-
-                expected_child = (
-                    TspFunction._create_child(
-                        current_node,
-                        tsp.matrix,
-                        current_node.vertex,
-                        destination
-                    )
-                )
-
                 expected_reduction_cost = (
-                    expected_child.cost
-                    - current_node.cost
-                    - reduced_edge_cost
+                    expected_child.cost - current_node.cost - reduced_edge_cost
                 )
-
-                # ---------------------------------------------
-                # Verify every recorded value.
-                # ---------------------------------------------
-
-                if (
-                    branch_data[
-                        "child_path"
-                    ]
-                    != expected_child.path
-                ):
-
+                if branch_data["child_path"] != expected_child.path:
                     return fail()
-
-                if (
-                    branch_data[
-                        "edge_cost"
-                    ]
-                    != expected_edge_cost
-                ):
-
+                if branch_data["edge_cost"] != expected_edge_cost:
                     return fail()
-
-                if (
-                    branch_data[
-                        "reduction_cost"
-                    ]
-                    != expected_reduction_cost
-                ):
-
+                if branch_data["reduction_cost"] != expected_reduction_cost:
                     return fail()
-
-                if (
-                    branch_data[
-                        "child_lower_bound"
-                    ]
-                    != expected_child.cost
-                ):
-
+                if branch_data["child_lower_bound"] != expected_child.cost:
                     return fail()
-
-                if (
-                    branch_data[
-                        "incumbent_cost"
-                    ]
-                    != expected_incumbent
-                ):
-
+                if branch_data["incumbent_cost"] != expected_incumbent:
                     return fail()
-
-                expected_pruned = (
-                    expected_child.cost
-                    >= expected_incumbent
-                )
-
-                if (
-                    branch_data["pruned"]
-                    != expected_pruned
-                ):
-
+                expected_pruned = expected_child.cost >= expected_incumbent
+                if branch_data["pruned"] != expected_pruned:
                     return fail()
-
-                # ---------------------------------------------
-                # Only unpruned children enter the verifier's
-                # open frontier.
-                # ---------------------------------------------
-
                 if not expected_pruned:
-
-                    child_key = tuple(
-                        expected_child.path
-                    )
-
+                    child_key = tuple(expected_child.path)
                     if child_key in open_nodes:
-
                         return fail()
-
-                    open_nodes[
-                        child_key
-                    ] = expected_child
-
+                    open_nodes[child_key] = expected_child
                 index += 1
-
-            # We already advanced index through the complete
-            # branch group.
             continue
-
-        # =====================================================
-        # POP-TIME PRUNE
-        # =====================================================
-
         elif step_type == "prune":
-
             computations += 1
-
-            if (
-                data["vertex"]
-                != current_node.vertex
-            ):
-
+            if data["vertex"] != current_node.vertex:
                 return fail()
-
-            if (
-                data["lower_bound"]
-                != current_node.cost
-            ):
-
+            if data["lower_bound"] != current_node.cost:
                 return fail()
-
-            if (
-                data["incumbent_cost"]
-                != expected_incumbent
-            ):
-
+            if data["incumbent_cost"] != expected_incumbent:
                 return fail()
-
-            # Exact solver pruning condition.
-            if (
-                current_node.cost
-                < expected_incumbent
-            ):
-
+            if current_node.cost < expected_incumbent:
                 return fail()
-
             del open_nodes[node_path]
-
             index += 1
-
-        # =====================================================
-        # COMPLETE TOUR
-        # =====================================================
-
         elif step_type == "complete":
-
             computations += 1
-
-            # Otherwise it would have been pop-time pruned.
-            if (
-                current_node.cost
-                >= expected_incumbent
-            ):
-
+            if current_node.cost >= expected_incumbent:
                 return fail()
-
-            if (
-                current_node.visited
-                != tsp.size - 1
-            ):
-
+            if current_node.visited != tsp.size - 1:
                 return fail()
-
-            if (
-                data["parent_vertex"]
-                != current_node.vertex
-            ):
-
+            if data["parent_vertex"] != current_node.vertex:
                 return fail()
-
-            if (
-                data["parent_lower_bound"]
-                != current_node.cost
-            ):
-
+            if data["parent_lower_bound"] != current_node.cost:
                 return fail()
-
-            if (
-                data["selected_neighbour"]
-                != 0
-            ):
-
+            if data["selected_neighbour"] != 0:
                 return fail()
-
-            final_edge = (
-                tsp.matrix[
-                    current_node.vertex
-                ][0]
-            )
-
+            final_edge = tsp.matrix[current_node.vertex][0]
             if final_edge == utils.inf:
-
                 return fail()
-
-            if (
-                data["edge_cost"]
-                != final_edge
-            ):
-
+            if data["edge_cost"] != final_edge:
                 return fail()
-
-            expected_path = (
-                current_node.path
-                + [0]
-            )
-
-            if (
-                data["child_path"]
-                != expected_path
-            ):
-
+            expected_path = current_node.path + [0]
+            if data["child_path"] != expected_path:
                 return fail()
-
-            if (
-                data["reduction_cost"]
-                is not None
-            ):
-
+            if data["reduction_cost"] is not None:
                 return fail()
-
-            if (
-                data["child_lower_bound"]
-                is not None
-            ):
-
+            if data["child_lower_bound"] is not None:
                 return fail()
-
             if data["pruned"]:
-
+                return fail()
+            if data["incumbent_cost"] != expected_incumbent:
                 return fail()
 
-            if (
-                data["incumbent_cost"]
-                != expected_incumbent
-            ):
-
-                return fail()
-
-            completed_cost = (
-                current_node.total_cost
-                + final_edge
-            )
-
+            # Reconstruct incumbent updates from verified edges, not prover claims.
+            completed_cost = current_node.total_cost + final_edge
             del open_nodes[node_path]
-
-            # ---------------------------------------------
-            # Independently reconstruct incumbent history.
-            # ---------------------------------------------
-
-            if (
-                completed_cost
-                < expected_incumbent
-            ):
-
-                expected_incumbent = (
-                    completed_cost
-                )
-
-                expected_best_path = (
-                    expected_path
-                )
-
+            if completed_cost < expected_incumbent:
+                expected_incumbent = completed_cost
+                expected_best_path = expected_path
             index += 1
-
-        # =====================================================
-        # DEAD END
-        # =====================================================
-
         elif step_type == "dead_end":
-
             computations += 1
-
-            # Otherwise solver would have produced prune.
-            if (
-                current_node.cost
-                >= expected_incumbent
-            ):
-
+            if current_node.cost >= expected_incumbent:
                 return fail()
-
-            if (
-                data["vertex"]
-                != current_node.vertex
-            ):
-
+            if data["vertex"] != current_node.vertex:
                 return fail()
-
-            if (
-                data["lower_bound"]
-                != current_node.cost
-            ):
-
+            if data["lower_bound"] != current_node.cost:
                 return fail()
-
-            if (
-                data["incumbent_cost"]
-                != expected_incumbent
-            ):
-
+            if data["incumbent_cost"] != expected_incumbent:
                 return fail()
-
-            # ---------------------------------------------
-            # Complete path but no return edge.
-            # ---------------------------------------------
-
-            if (
-                current_node.visited
-                == tsp.size - 1
-            ):
-
-                final_edge = (
-                    tsp.matrix[
-                        current_node.vertex
-                    ][0]
-                )
-
+            if current_node.visited == tsp.size - 1:
+                final_edge = tsp.matrix[current_node.vertex][0]
                 if final_edge != utils.inf:
-
                     return fail()
-
-                if (
-                    data.get("reason")
-                    != "no_return_edge"
-                ):
-
+                if data.get("reason") != "no_return_edge":
                     return fail()
-
-            # ---------------------------------------------
-            # Non-complete node with no legal children.
-            # ---------------------------------------------
-
             else:
-
                 legal_children = []
-
-                for destination in range(
-                    current_node.size
-                ):
-
+                for destination in range(current_node.size):
                     if (
-                        current_node.matrix[
-                            current_node.vertex
-                        ][destination]
+                        current_node.matrix[current_node.vertex][destination]
                         == utils.inf
                     ):
-
                         continue
-
-                    if (
-                        destination
-                        in current_node.path
-                    ):
-
+                    if destination in current_node.path:
                         continue
-
-                    legal_children.append(
-                        destination
-                    )
-
+                    legal_children.append(destination)
                 if legal_children:
-
                     return fail()
-
-                if (
-                    data.get("reason")
-                    != "no_children"
-                ):
-
+                if data.get("reason") != "no_children":
                     return fail()
-
             del open_nodes[node_path]
-
             index += 1
 
-    # =========================================================
-    # SEARCH COMPLETENESS
-    # =========================================================
-
-    # No generated B&B node may simply disappear from the
-    # transcript.
+    # A truncated transcript cannot pass while any generated node remains open.
     if open_nodes:
-
-        if debug:
-            print(
-                "Proof failed: unprocessed B&B nodes:",
-                list(open_nodes.keys())
-            )
-
         return fail()
-
-    # =========================================================
-    # FINAL INCUMBENT MUST BE THE PROPOSED SOLUTION
-    # =========================================================
-
     if expected_best_path is None:
-
         return fail()
 
-    if (
-        expected_incumbent
-        != proposed_cost
-    ):
-
+    # The submitted tour was checked separately; equal-cost alternative tours are valid.
+    if expected_incumbent != proposed_cost:
         return fail()
+    return (True, computations, expected_best_path, expected_incumbent)
 
-    if debug:
 
-        print(
-            "Complete B&B replay valid."
-        )
-
-        print(
-            "Reconstructed best path:",
-            expected_best_path
-        )
-
-        print(
-            "Reconstructed best cost:",
-            expected_incumbent
-        )
-
-    return (
-        True,
-        computations,
-        expected_best_path,
-        expected_incumbent
-    )
-
-def _parallel_hash_validation(
-    transcript,
-    validators,
-    transcript_root
-):
-    print("Parallel hash validation")
-
-    #print("\n[HASH] Entering _parallel_hash_validation")
-
-    # A transcript is required for hash-chain validation.
+def _parallel_hash_validation(transcript, validators, transcript_root):
+    """Partition the chain into contiguous slices and combine their checks and modeled
+    times.
+    """
     if transcript is None:
-        #print("[HASH FAIL] Transcript is None")
-        return False, 0, 0.0
-
+        return (False, 0, 0.0)
     steps = transcript.steps
     total_steps = len(steps)
-
-    #print(f"[HASH] Total transcript steps: {total_steps}")
-    #print(f"[HASH] Validators supplied: {len(validators)}")
-
-    # An empty transcript cannot provide a valid proof.
     if total_steps == 0:
-        #print("[HASH FAIL] Transcript contains no steps")
-        return False, 0, 0.0
+        return (False, 0, 0.0)
 
-    # There is no benefit in creating more validation tasks
-    # than there are transcript steps.
-    validators = validators[:min(
-        len(validators),
-        total_steps
-    )]
-
+    # Avoid assigning empty hash slices when there are more validators than records.
+    validators = validators[: min(len(validators), total_steps)]
     num_validators = len(validators)
-
     initial_hash = transcript_root
-
     arguments = []
-
-    # ---------------------------------------------------------
-    # Divide transcript steps between validators.
-    # ---------------------------------------------------------
-
-    # Each validator receives approximately the same number
-    # of transcript steps.
-    base_size = (
-        total_steps // num_validators
-    )
-
-    # Remaining steps are distributed one by one to the
-    # first validators.
-    remainder = (
-        total_steps % num_validators
-    )
-
+    base_size = total_steps // num_validators
+    remainder = total_steps % num_validators
     current_index = 0
-
     for validator_index in range(num_validators):
-
         slice_size = base_size
-
-        # Distribute the remaining transcript steps evenly.
         if validator_index < remainder:
             slice_size += 1
-
         start_index = current_index
-        end_index = (
-            start_index + slice_size
-        )
-
-        # The first validator starts from hash(sigma).
+        end_index = start_index + slice_size
         if start_index == 0:
             slice_initial_hash = initial_hash
-
-        # Every other validator starts from the hash stored
-        # by the transcript step immediately before its section.
         else:
-            slice_initial_hash = steps[
-                start_index - 1
-            ]["hash"]
 
-
-        #print(
-        #    f"[HASH] Validator {validator_index}: "
-        #    f"steps {start_index} to {end_index - 1}"
-        #)
-
+            # The preceding slice also verifies this boundary hash.
+            slice_initial_hash = steps[start_index - 1]["hash"]
         arguments.append(
-            (
-                validator_index,
-                steps,
-                start_index,
-                end_index,
-                slice_initial_hash
-            )
+            (validator_index, steps, start_index, end_index, slice_initial_hash)
         )
-
         current_index = end_index
-
-    #print("[HASH] Starting multiprocessing workers")
-
-    # ---------------------------------------------------------
-    # Execute validation in parallel.
-    # ---------------------------------------------------------
-
-    #print("BEFORE HASH POOL", flush=True)
-
-    # One worker process is created for each validator.
-    
-    with multiprocessing.Pool(
-            processes=num_validators
-        ) as pool:
-    
-            results = pool.map(
-                _hash_slice_worker,
-                arguments
-            )
-
-    """
-    pool = multiprocessing.Pool(
-        processes=num_validators
-        )
-        try:
-            results = pool.map(
-                _hash_slice_worker,
-                arguments
-            )
-        finally:
-            pool.close()
-            pool.join()
-        
-    """
-    """
-        results = [
-        _hash_slice_worker(argument)
-        for argument in arguments
-    ]
-    """
-
-    
-    #print("AFTER HASH POOL", flush=True)
-
-    #print("[HASH] Worker results:")
-
-    #for result in results:
-        #print(f"    {result}")
-
+    with multiprocessing.Pool(processes=num_validators) as pool:
+        results = pool.map(_hash_slice_worker, arguments)
     all_valid = True
     total_computations = 0
     validator_times = []
-
-    # ---------------------------------------------------------
-    # Process validator results.
-    # ---------------------------------------------------------
-
-    for (
-        validator_index,
-        valid,
-        computations,
-        failed_index
-    ) in results:
-
-        validator = validators[
-            validator_index
-        ]
-
-        # Add the number of hash checks performed by this validator.
+    for validator_index, valid, computations, failed_index in results:
+        validator = validators[validator_index]
         total_computations += computations
-
-        # Convert the number of performed checks into the
-        # simulated validation time of this validator.
         if validator.hash_validation_rate > 0:
-            validator_time = (
-                computations
-                / validator.hash_validation_rate
-            )
+            validator_time = computations / validator.hash_validation_rate
         else:
             validator_time = 0.0
-
-        validator_times.append(
-            validator_time
-        )
-
-        #print(
-        #    f"[HASH] Validator {validator_index}: "
-        #    f"valid={valid}, "
-        #    f"computations={computations}, "
-        #    f"failed_index={failed_index}, "
-        #    f"time={validator_time}"
-        #)
-
-
-        # A single invalid transcript section is sufficient
-        # to reject the entire proof.
+        validator_times.append(validator_time)
         if not valid:
             all_valid = False
-
-    # Validators operate simultaneously, so elapsed validation
-    # time is determined by the slowest validator.
-    validation_time = (
-        max(validator_times)
-        if validator_times
-        else 0.0
-    )
-
-    #print(
-    #    f"[HASH] Final: valid={all_valid}, "
-    #    f"computations={total_computations}, "
-    #    f"time={validation_time}"
-    #)
-
-    return (
-        all_valid,
-        total_computations,
-        validation_time
-    )
+    validation_time = max(validator_times) if validator_times else 0.0
+    return (all_valid, total_computations, validation_time)
 
 
 def _hash_slice_worker(args):
-
-    (
-        validator_index,
-        steps,
-        start_index,
-        end_index,
-        initial_hash
-    ) = args
-
-    #print(
-    #    f"[HASH WORKER {validator_index}] "
-    #    f"Started: {start_index} -> {end_index - 1}"
-    #)
-
-    # Start from the hash that precedes this validator's section.
+    """Check step numbers, previous-hash links, and recomputed hashes in one assigned
+    slice.
+    """
+    validator_index, steps, start_index, end_index, initial_hash = args
     previous_hash = initial_hash
     computations = 0
-
-    # Validate every transcript step assigned to this validator.
-    for index in range(
-        start_index,
-        end_index
-    ):
-
-        # Each transcript step requires one hash-chain validation.
+    for index in range(start_index, end_index):
         computations += 1
-
         step = steps[index]
-
-        # -----------------------------------------------------
-        # Verify the transcript step number.
-        # -----------------------------------------------------
-
         expected_step_number = index + 1
-
-        #if step["step"] != expected_step_number:
-            #print(
-            #    f"[HASH WORKER {validator_index} FAIL] "
-            #    f"Step number mismatch at index {index}"
-            #)
-            #print(
-            #    f"Expected: {expected_step_number}, "
-            #    f"got: {step['step']}"
-            #)
-
         if step["step"] != expected_step_number:
-            return (
-                validator_index,
-                False,
-                computations,
-                index
-            )
-
-        # -----------------------------------------------------
-        # Verify the previous hash.
-        # -----------------------------------------------------
-
-        # The stored previous hash must match the hash generated
-        # by the preceding transcript step.
-        #if step["previous_hash"] != previous_hash:
-            #print(
-        #        f"[HASH WORKER {validator_index} FAIL] "
-        #        f"Previous hash mismatch at index {index}"
-        #    )
-            #print(f"Expected: {previous_hash}")
-            #print(f"Stored:   {step['previous_hash']}")
-
+            return (validator_index, False, computations, index)
         if step["previous_hash"] != previous_hash:
-            return (
-                validator_index,
-                False,
-                computations,
-                index
-            )
-
-        # -----------------------------------------------------
-        # Recalculate the current hash.
-        # -----------------------------------------------------
-
-        # Reconstruct exactly the same data that was used when
-        # the transcript entry was originally created.
-        hash_data = (
-            previous_hash
-            + str(step["step"])
-            + str(step["data"])
-        )
-
-        expected_hash = utils.create_hash(
-            hash_data
-        )
-
-        #if step["hash"] != expected_hash:
-        #    #print(
-        #        f"[HASH WORKER {validator_index} FAIL] "
-        #        f"Current hash mismatch at index {index}"
-        #    )
-            #print(f"Expected: {expected_hash}")
-            #print(f"Stored:   {step['hash']}")
-            #print(f"Data:     {step['data']}")
-
-        # The recalculated hash must match the stored hash.
+            return (validator_index, False, computations, index)
+        hash_data = previous_hash + str(step["step"]) + str(step["data"])
+        expected_hash = utils.create_hash(hash_data)
         if step["hash"] != expected_hash:
-            return (
-                validator_index,
-                False,
-                computations,
-                index
-            )
-
-        # The current hash becomes the previous hash for the
-        # next transcript step in this validator's section.
+            return (validator_index, False, computations, index)
         previous_hash = step["hash"]
+    return (validator_index, True, computations, None)
 
-    #print(
-    #    f"[HASH WORKER {validator_index}] "
-    #    f"Passed {computations} checks"
-    #)
 
-    # All assigned transcript steps passed validation.
-    return (
-        validator_index,
-        True,
-        computations,
-        None
-    )
+def _validate_hamiltonian_cycle(tsp, path, debug=True):
+    """Require integer city indices and exactly one visit per city before returning to
+    zero.
+    """
 
-def _validate_hamiltonian_cycle(
-    tsp,
-    path,
-    debug=True
-):
-
-    if debug:
-        print(
-            "Validating hamiltonian cycle"
-        )
-
+    # A cycle contains each city once, plus zero repeated at the end.
     if not isinstance(path, (list, tuple)) or len(path) != tsp.size + 1:
         return False
-    # bool and float vertices must not masquerade as integer city indices.
-    if any(type(vertex) is not int or not 0 <= vertex < tsp.size for vertex in path):
+
+    # Reject Boolean and floating-point indices before they reach matrix indexing.
+    if any((type(vertex) is not int or not 0 <= vertex < tsp.size for vertex in path)):
         return False
-    return (path[0] == 0 and path[-1] == 0
-            and len(set(path[:-1])) == tsp.size)
+    return path[0] == 0 and path[-1] == 0 and (len(set(path[:-1])) == tsp.size)
 
 
 def _validate_proposed_tour(tsp, path, proposed_cost):
@@ -1687,118 +549,64 @@ def _validate_proposed_tour(tsp, path, proposed_cost):
     total = 0
     for source, destination in zip(path, path[1:]):
         edge = tsp.matrix[source][destination]
-        if isinstance(edge, bool) or not isinstance(edge, Real) or not math.isfinite(edge):
+        if (
+            isinstance(edge, bool)
+            or not isinstance(edge, Real)
+            or (not math.isfinite(edge))
+        ):
             return False
         total += edge
     return total == proposed_cost
 
 
 def _validate_transcript_root(
-    tsp,
-    transcript,
-    transcript_sigma,
-    transcript_root,
-    debug=True
+    tsp, transcript, transcript_sigma, transcript_root, debug=True
 ):
-
-    if debug:
-        print(
-            "Validating transcript root"
-        )
-
-    if not hasattr(
-        transcript,
-        "root"
-    ):
+    """Reconstruct the trusted root and its children, then check the supplied
+    commitment.
+    """
+    if not hasattr(transcript, "root"):
         return False
-
     root = tsp.tsp_root
-
     expected_children = []
-
-    # Independently reconstruct every legal first-level child.
     for neighbour in range(root.size):
-
-        if (
-            root.matrix[
-                root.vertex
-            ][neighbour] == utils.inf
-        ):
+        if root.matrix[root.vertex][neighbour] == utils.inf:
             continue
-
         if neighbour in root.path:
             continue
-
-        child = TspFunction._create_child(
-            root,
-            tsp.matrix,
-            root.vertex,
-            neighbour
+        child = TspFunction._create_child(root, tsp.matrix, root.vertex, neighbour)
+        edge_cost = tsp.matrix[root.vertex][neighbour]
+        reduced_edge_cost = root.matrix[root.vertex][neighbour]
+        reduction_cost = child.cost - root.cost - reduced_edge_cost
+        expected_children.append(
+            {
+                "selected_neighbour": neighbour,
+                "child_path": child.path[:],
+                "edge_cost": edge_cost,
+                "reduction_cost": reduction_cost,
+                "child_lower_bound": child.cost,
+            }
         )
 
-        edge_cost = tsp.matrix[
-            root.vertex
-        ][neighbour]
-
-        reduced_edge_cost = root.matrix[
-            root.vertex
-        ][neighbour]
-
-        reduction_cost = (
-            child.cost
-            - root.cost
-            - reduced_edge_cost
-        )
-
-        expected_children.append({
-            "selected_neighbour": neighbour,
-            "child_path": child.path[:],
-            "edge_cost": edge_cost,
-            "reduction_cost": reduction_cost,
-            "child_lower_bound": child.cost
-        })
-
-    # Reconstruct exactly the same root data MainFunctions
-    # generated before mining began.
+    # The root is reconstructed from trusted TSP state rather than copied from evidence.
     expected_root_data = {
         "path": root.path[:],
         "vertex": root.vertex,
         "visited": root.visited,
         "lower_bound": root.cost,
-        "children": expected_children
+        "children": expected_children,
     }
-
-    # Transcript must contain the correct root data.
-    if (
-        transcript.root["data"]
-        != expected_root_data
-    ):
+    if transcript.root["data"] != expected_root_data:
         return False
-
-    # Root must really be step 0.
     if transcript.root["step"] != 0:
         return False
-
     if transcript.root["previous_hash"] is not None:
         return False
-
-    # Independently reconstruct the root hash.
     calculated_root_hash = utils.create_hash(
-        transcript_sigma.hex()
-        + str(expected_root_data)
-        + str(tsp.matrix)
+        transcript_sigma.hex() + str(expected_root_data) + str(tsp.matrix)
     )
-
-    # It must equal the root that MainFunctions created
-    # before mining started.
     if calculated_root_hash != transcript_root:
         return False
-
-    # The transcript must also contain that exact root.
-    if (
-        transcript.root["hash"]
-        != transcript_root
-    ):
+    if transcript.root["hash"] != transcript_root:
         return False
-
     return True

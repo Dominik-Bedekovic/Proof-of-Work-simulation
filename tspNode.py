@@ -1,36 +1,25 @@
+"""Represent a partial tour with its reduced matrix and lower bound."""
+
 import utils
 
 
 class TspNode:
+    """One partial route, including its actual distance and a bound on any completion."""
 
     def __init__(self, size=0):
-        # Number of cities in the TSP instance.
+        """Initialize the route, matrix, vertex, and separate bound/distance fields."""
         self.size = size
-
-        # Reduced cost matrix used by the Branch and Bound algorithm.
-        self.matrix = [
-            [utils.inf] * self.size
-            for _ in range(self.size)
-        ]
-
-        # List of cities visited along the current path.
+        self.matrix = [[utils.inf] * self.size for _ in range(self.size)]
         self.path = []
-
-        # City represented by the current node.
         self.vertex = 0
 
-        # Number of cities visited along the current path.
+        # Counts edges taken from zero; a node with n - 1 edges has visited all n cities.
         self.visited = 0
 
-        # Lower-bound cost of the current branch.
-        # This value is used to determine whether the branch
-        # can be pruned.
+        # Lower bound for pruning; total_cost below is only the actual partial-route distance.
         self.cost = 0
-
-        # Actual accumulated distance of the current path.
         self.total_cost = 0
 
     def __lt__(self, other):
-        # Define comparison between nodes so that heapq can
-        # order the priority queue according to the lower-bound cost.
+        """Order search nodes by lower bound for the priority queue."""
         return self.cost < other.cost

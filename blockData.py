@@ -1,14 +1,13 @@
+"""Provide shared sample block-header inputs and transactions for the simulation."""
+
 import utils
 import datetime
 
 
 class BlockData:
+    """Shared sample block values, generated once when this class is defined."""
 
-    # Generate a random hash representing the hash of the previous block.
+    # Class-level sample values are initialized once at import, not per BlockData instance.
     previous_hash = utils.create_hash(utils.random_string(20))
-
-    # Store the current timestamp as the creation time of the block.
     timestamp = str(datetime.datetime.now())
-
-    # Generate a collection of random transactions for the block.
     transactions = utils.random_transactions()

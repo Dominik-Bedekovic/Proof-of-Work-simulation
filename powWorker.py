@@ -1,8 +1,12 @@
+"""Execute PoW batches and maintain nonce state at the simulated stopping time."""
+
 from blockFunctions import BlockFunctions
 
 
 def pow_worker(args):
-    # Unpack the current mining state of the node.
+    """Try up to one simulated second of hashes; return success or the next-attempt
+    state.
+    """
     (
         nonce,
         extra_nonce,
@@ -12,65 +16,45 @@ def pow_worker(args):
         previous_hash,
         timestamp,
         difficulty,
-        transactions
+        transactions,
     ) = args
-
-    # Perform the number of hash attempts defined by the node's hash rate.
     for i in range(hash_rate):
-        # Create a hash from the current block header.
         header_hash = BlockFunctions.create_header_hash(
-            previous_hash,
-            timestamp,
-            merkle_root,
-            nonce
+            previous_hash, timestamp, merkle_root, nonce
         )
 
-        # Check whether the hash meets the required difficulty.
+        # Difficulty counts hexadecimal leading zeroes in the SHA-256 digest.
         if header_hash.startswith("0" * difficulty):
-            # Return the mining state when a valid hash is found.
             return {
                 "found": True,
                 "hashes": i + 1,
                 "nonce": nonce,
                 "extra_nonce": extra_nonce,
                 "merkle_root": merkle_root,
-                "header_hash": header_hash
+                "header_hash": header_hash,
             }
 
-        # Check whether the 32-bit nonce space has been exhausted.
-        if nonce == (2 ** 32) - 1:
+        # Changing the extra nonce produces another header after the nonce space is exhausted.
+        if nonce == 2**32 - 1:
             nonce = 0
             extra_nonce += 1
-
-            # Changing the extra nonce changes the coinbase data
-            # and therefore the Merkle root.
-            coinbase = {
-                "reward": reward,
-                "extra_nonce": extra_nonce
-            }
-
-            merkle_root = BlockFunctions.calculate_merkle_root(
-                transactions,
-                coinbase
-            )
+            coinbase = {"reward": reward, "extra_nonce": extra_nonce}
+            merkle_root = BlockFunctions.calculate_merkle_root(transactions, coinbase)
         else:
-            # Move to the next nonce for the next hash attempt.
             nonce += 1
-
-    # Return the updated mining state if no valid hash was found.
     return {
         "found": False,
         "hashes": hash_rate,
         "nonce": nonce,
         "extra_nonce": extra_nonce,
         "merkle_root": merkle_root,
-        "header_hash": None
+        "header_hash": None,
     }
 
 
 def advance_state(node, completed_hashes):
     """Advance the next-attempt cursor, including nonce-space wraparound."""
-    wraps, node.nonce = divmod(node.nonce + completed_hashes, 2 ** 32)
+    wraps, node.nonce = divmod(node.nonce + completed_hashes, 2**32)
     if wraps:
         node.coinbase["extra_nonce"] += wraps
         node.merkle_root = BlockFunctions.calculate_merkle_root(

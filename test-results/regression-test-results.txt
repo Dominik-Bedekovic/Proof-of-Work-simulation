@@ -1,23 +1,41 @@
-test_actual_parent_availability (test_regressions.Regressions.test_actual_parent_availability) ... ok
-test_all_inflight_tasks_and_slow_logging_drained (test_regressions.Regressions.test_all_inflight_tasks_and_slow_logging_drained) ... ok
-test_benchmark_components (test_regressions.Regressions.test_benchmark_components) ... ok
-test_council_rejects_original_1050 (test_regressions.Regressions.test_council_rejects_original_1050) ... ok
-test_dependency_chain_three_seconds (test_regressions.Regressions.test_dependency_chain_three_seconds) ... ok
-test_equal_optimum_alternative_allowed (test_regressions.Regressions.test_equal_optimum_alternative_allowed) ... ok
-test_final_transcript_drained (test_regressions.Regressions.test_final_transcript_drained) ... ok
-test_invalid_run_rejected (test_regressions.Regressions.test_invalid_run_rejected) ... ok
-test_malformed_vertices_costs_and_missing_edges (test_regressions.Regressions.test_malformed_vertices_costs_and_missing_edges) ... ok
-test_original_adversarial_suite (test_regressions.Regressions.test_original_adversarial_suite) ... ok
-test_original_five_city_false_pair (test_regressions.Regressions.test_original_five_city_false_pair) ... ok
-test_original_solution_payload (test_regressions.Regressions.test_original_solution_payload) ... ok
-test_parallel_transcripts_and_optima (test_regressions.Regressions.test_parallel_transcripts_and_optima) ... ok
-test_pow_earliest_winner_counts_cursor_and_ties (test_regressions.Regressions.test_pow_earliest_winner_counts_cursor_and_ties) ... ok
-test_pow_nonce_wrap (test_regressions.Regressions.test_pow_nonce_wrap) ... ok
-test_repeat_modes_accounting_and_payload (test_regressions.Regressions.test_repeat_modes_accounting_and_payload) ... ok
-test_seven_city_false_pair (test_regressions.Regressions.test_seven_city_false_pair) ... ok
-test_solver_against_600_exhaustive_instances (test_regressions.Regressions.test_solver_against_600_exhaustive_instances) ... ok
+test_actual_parent_availability (test_regressions.Regressions.test_actual_parent_availability)
+Ensure every child begins after its parent completes and each task consumes ... ok
+test_all_inflight_tasks_and_slow_logging_drained (test_regressions.Regressions.test_all_inflight_tasks_and_slow_logging_drained)
+Wait for every reserved task and ordered append batch, including the slowest ... ok
+test_benchmark_components (test_regressions.Regressions.test_benchmark_components)
+Ensure all component calibrators execute verified positive-throughput ... ok
+test_council_rejects_original_1050 (test_regressions.Regressions.test_council_rejects_original_1050)
+Ensure a branch finding a better tour rejects the old nonoptimal proposal. ... ok
+test_dependency_chain_three_seconds (test_regressions.Regressions.test_dependency_chain_three_seconds)
+Verify three dependent one-second tasks still take three seconds with ... ok
+test_equal_optimum_alternative_allowed (test_regressions.Regressions.test_equal_optimum_alternative_allowed)
+Accept the reversed orientation of a symmetric optimal tour. ... ok
+test_final_transcript_drained (test_regressions.Regressions.test_final_transcript_drained)
+Ensure the final record appends finish before the search phase ends. ... ok
+test_invalid_run_rejected (test_regressions.Regressions.test_invalid_run_rejected)
+Ensure a failed validation is rejected before successful-run statistics are ... ok
+test_malformed_vertices_costs_and_missing_edges (test_regressions.Regressions.test_malformed_vertices_costs_and_missing_edges)
+Reject malformed city indices, invalid costs, and a missing tour edge. ... ok
+test_original_adversarial_suite (test_regressions.Regressions.test_original_adversarial_suite)
+Require every original honest/adversarial test to return its expected ... ok
+test_original_five_city_false_pair (test_regressions.Regressions.test_original_five_city_false_pair)
+Reject the 1870-cost route when it claims the genuine optimum cost of 1030. ... ok
+test_original_solution_payload (test_regressions.Regressions.test_original_solution_payload)
+Require a closed 1030-cost tour in either orientation and correct discoverer ... ok
+test_parallel_transcripts_and_optima (test_regressions.Regressions.test_parallel_transcripts_and_optima)
+Check heterogeneous-worker schedules against enumeration and semantic ... ok
+test_pow_earliest_winner_counts_cursor_and_ties (test_regressions.Regressions.test_pow_earliest_winner_counts_cursor_and_ties)
+Check earliest success, floor counts, deterministic ties, and next-attempt ... ok
+test_pow_nonce_wrap (test_regressions.Regressions.test_pow_nonce_wrap)
+Advance the extra nonce and transaction digest when the ordinary nonce ... ok
+test_repeat_modes_accounting_and_payload (test_regressions.Regressions.test_repeat_modes_accounting_and_payload)
+Check repeated runs, state resets, returned tours, and component work sums ... ok
+test_seven_city_false_pair (test_regressions.Regressions.test_seven_city_false_pair)
+Reject the second reviewed false route/cost pair on the deterministic seven- ... ok
+test_solver_against_600_exhaustive_instances (test_regressions.Regressions.test_solver_against_600_exhaustive_instances)
+Compare optimal costs against enumeration on 600 complete symmetric small ... ok
 
 ----------------------------------------------------------------------
-Ran 18 tests in 1.745s
+Ran 18 tests in 1.688s
 
 OK

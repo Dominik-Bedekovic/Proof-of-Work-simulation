@@ -4,6 +4,8 @@ from tspData import TspData
 from tspFunctions import TspFunction
 import multiprocessing
 import utils
+import math
+from numbers import Real
 
 
 def council_validation(
@@ -205,83 +207,7 @@ def _validate_node(args):
     # Extract the validation arguments.
     tsp, proposed_path, proposed_cost = args
 
-    # Assume the proposed solution is valid until
-    # one of the validation checks fails.
-    valid = True
-
-    # --------------------------------------------------------
-    # PATH STRUCTURE VALIDATION
-    # --------------------------------------------------------
-
-    # The path must exist.
-    if not proposed_path:
-        valid = False
-
-    # The path must contain every city exactly once,
-    # plus the repeated starting city at the end.
-    elif len(proposed_path) != tsp.size + 1:
-        valid = False
-
-    # The tour must start and end at vertex 0.
-    elif (
-        proposed_path[0] != 0
-        or proposed_path[-1] != 0
-    ):
-        valid = False
-
-    # Every city index must be valid.
-    elif any(
-        vertex < 0 or vertex >= tsp.size
-        for vertex in proposed_path[:-1]
-    ):
-        valid = False
-
-    # Every city must appear exactly once before
-    # returning to the starting city.
-    elif len(set(proposed_path[:-1])) != tsp.size:
-        valid = False
-
-    # --------------------------------------------------------
-    # PATH COST VALIDATION
-    # --------------------------------------------------------
-
-    else:
-
-        total_cost = 0
-
-        for i in range(len(proposed_path) - 1):
-
-            source = proposed_path[i]
-            destination = proposed_path[i + 1]
-
-            edge_cost = tsp.matrix[source][destination]
-
-            # The proposed path cannot contain a missing edge.
-            if edge_cost == utils.inf:
-                valid = False
-                break
-
-            total_cost += edge_cost
-
-        # The independently calculated path cost must
-        # match the claimed solution cost.
-        if valid and total_cost != proposed_cost:
-            valid = False
-
-    return valid
-
-
-def _parallel_branch_validation(
-    tsp,
-    council,
-    proposed_cost
-):
-    # Generate the initial Branch and Bound search branches.
-    branches = TspFunction.create_initial_branches(tsp)
-
-    # Store the multiprocessing.Process objects so they can
-    # later be waited on with join().
-    processes = []
+    return _validate_proposed_tour(tsp, proposed_path, proposed_cost)
 
 
 def _parallel_branch_validation(
@@ -515,10 +441,7 @@ def proof_based_validation(
     # 1. HAMILTONIAN CYCLE
     # =========================================================
 
-    if not _validate_hamiltonian_cycle(
-        tsp,
-        path
-    ):
+    if not _validate_proposed_tour(tsp, path, proposed_cost):
         return empty_result
 
     # One semantic unit for Hamiltonian validation.
@@ -709,6 +632,9 @@ def _validate_transcript_semantics(
     if transcript is None:
         return False, 0, None, utils.inf
 
+    if not _validate_proposed_tour(tsp, proposed_path, proposed_cost):
+        return False, 0, None, utils.inf
+
     computations = 0
 
     expected_incumbent = utils.inf
@@ -796,26 +722,11 @@ def _validate_transcript_semantics(
 
             return fail()
 
-        # =====================================================
-        # VERIFY B&B PRIORITY-QUEUE ORDER
-        # =====================================================
-        #
-        # The real solver always pops a node having the
-        # smallest lower bound currently present in the queue.
-        #
-        # Equal lower bounds may be processed in either order.
-
-        minimum_lower_bound = min(
-            node.cost
-            for node in open_nodes.values()
-        )
-
-        if (
-            current_node.cost
-            != minimum_lower_bound
-        ):
-
-            return fail()
+        # Completion order may differ from dispatch priority in a parallel
+        # search. Soundness requires a generated open node, valid reductions,
+        # incumbent-consistent pruning and an exhausted frontier; it does not
+        # require globally minimum-bound completion order. This verifier checks
+        # the search result, not the scheduler's resource/timing claims.
 
         # =====================================================
         # EXPANSION
@@ -1753,36 +1664,34 @@ def _validate_hamiltonian_cycle(
             "Validating hamiltonian cycle"
         )
 
-    # A path must exist.
-    if not path:
+    if not isinstance(path, (list, tuple)) or len(path) != tsp.size + 1:
         return False
-
-    # Hamiltonian cycle over n cities contains
-    # n + 1 vertices because city 0 is repeated.
-    if len(path) != tsp.size + 1:
+    # bool and float vertices must not masquerade as integer city indices.
+    if any(type(vertex) is not int or not 0 <= vertex < tsp.size for vertex in path):
         return False
+    return (path[0] == 0 and path[-1] == 0
+            and len(set(path[:-1])) == tsp.size)
 
-    # Search always starts and ends at city 0.
-    if path[0] != 0 or path[-1] != 0:
+
+def _validate_proposed_tour(tsp, path, proposed_cost):
+    """Validate the actual submitted cycle, independently of its transcript.
+
+    Alternative equal-cost optimum tours are permitted by the protocol.
+    """
+    if not _validate_hamiltonian_cycle(tsp, path, debug=False):
         return False
-
-    # Every city must be valid.
-    if any(
-        vertex < 0
-        or vertex >= tsp.size
-        for vertex in path[:-1]
-    ):
+    if isinstance(proposed_cost, bool) or not isinstance(proposed_cost, Real):
         return False
-
-    # Every city must occur exactly once
-    # before returning to city 0.
-    if (
-        len(set(path[:-1]))
-        != tsp.size
-    ):
+    if not math.isfinite(proposed_cost):
         return False
+    total = 0
+    for source, destination in zip(path, path[1:]):
+        edge = tsp.matrix[source][destination]
+        if isinstance(edge, bool) or not isinstance(edge, Real) or not math.isfinite(edge):
+            return False
+        total += edge
+    return total == proposed_cost
 
-    return True
 
 def _validate_transcript_root(
     tsp,

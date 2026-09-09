@@ -1309,9 +1309,8 @@ def show_node_details(data):
 
             text=(
 
-                f"Winning TSP node: "
-
-                f"{winner['name']}"
+                f"Best-tour discoverer: {winner['name']} | "
+                f"Finishing worker: {run['finishing_node']}"
 
             )
 
@@ -1357,9 +1356,9 @@ def show_node_details(data):
 
             text=(
 
-                f"Cost: "
+                f"Search-node lower bound: "
 
-                f"{winner['cost']}"
+                f"{winner['lower_bound']}"
 
             )
 
@@ -1381,7 +1380,7 @@ def show_node_details(data):
 
             text=(
 
-                f"Total cost: "
+                f"Tour cost (including return): "
 
                 f"{winner['total_cost']}"
 
@@ -1624,7 +1623,7 @@ def show_comparison_graph(data):
         "PoUW Validation Work Breakdown",
 
         [
-            "Base PoUW",
+            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
             "Validation",
             validation_name
         ],
@@ -1650,7 +1649,7 @@ def show_comparison_graph(data):
         "PoUW Validation Time Breakdown",
 
         [
-            "Base PoUW",
+            ("Search +\ntranscript generation" if selected_validation == "proof" else "Search"),
             "Validation",
             validation_name
         ],

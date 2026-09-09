@@ -1,0 +1,90 @@
+
+===============================================
+PROOF VALIDATION ADVERSARIAL TESTS
+===============================================
+
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Complete B&B replay valid.
+Reconstructed best path: [0, 3, 5, 4, 6, 2, 1, 0]
+Reconstructed best cost: 1813
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 87
+Expected semantic time: 0.00087
+PASS  | Honest transcript                   | expected=True actual=True
+Proof based validation
+PASS  | Incomplete Hamiltonian tour         | expected=False actual=False
+Proof based validation
+PASS  | Wrong proposed cost                 | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 9
+Expected semantic time: 9e-05
+PASS  | Fabricated lower bound              | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 9
+Expected semantic time: 9e-05
+PASS  | Fabricated reduction cost           | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 9
+Expected semantic time: 9e-05
+PASS  | Fabricated pruning decision         | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 10
+Expected semantic time: 0.0001
+PASS  | Missing legal child                 | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 47
+Expected semantic time: 0.00047
+PASS  | Truncated transcript                | expected=False actual=False
+Non-optimal solution test: 2587 vs optimum: 1813
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 87
+Expected semantic time: 0.00087
+PASS  | Valid non-optimal solution          | expected=False actual=False
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Semantic validator: test-validator
+Semantic validation rate: 100000.0 semantic units/s
+Semantic checks: 55
+Expected semantic time: 0.00055
+PASS  | Invalid incumbent history           | expected=False actual=False
+
+===============================================
+PASSED: 10 / 10
+===============================================
+

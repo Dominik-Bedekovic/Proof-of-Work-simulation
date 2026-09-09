@@ -10,6 +10,8 @@ from blockData import BlockData
 from validation import council_validation
 from validation import proof_based_validation
 import heapq
+from fractions import Fraction
+from scheduler import run_search
 
 # Validation modes
 NO_VALIDATION = 0b00
@@ -428,6 +430,7 @@ class MainFunctions:
             self.num_of_cities
         )
 
+        Node.transcript = None
         # Create the shared transcript when proof validation is enabled.
         if self.validation_mode & PROOF_VALIDATION:
 
@@ -539,21 +542,6 @@ class MainFunctions:
                     arguments
                 )
 
-                # Update nodes that did not find a valid hash
-                # during the current mining interval.
-                for node, result in zip(
-                    self.node_list,
-                    results
-                ):
-                    if not result["found"]:
-                        node.nonce = result["nonce"]
-                        node.coinbase["extra_nonce"] = (
-                            result["extra_nonce"]
-                        )
-                        node.merkle_root = (
-                            result["merkle_root"]
-                        )
-
                 # Find all nodes that found a valid hash
                 # during the current mining interval.
                 successful_nodes = [
@@ -565,14 +553,18 @@ class MainFunctions:
                 # If no node found a valid hash, one simulated
                 # second of mining has elapsed.
                 if not successful_nodes:
-                    for node in self.node_list:
-                        node.mining_count += node.hash_rate
+                    for node, result in zip(self.node_list, results):
+                        node.update_pow_state(result)
 
                     Node.simulation_time += 1
                     continue
 
-                # Select the first node that found a valid hash.
-                winner_index, winner = successful_nodes[0]
+                # Earliest exact rational completion time; list index breaks ties.
+                winner_index, winner = min(
+                    successful_nodes,
+                    key=lambda item: (Fraction(item[1]["hashes"],
+                                               self.node_list[item[0]].hash_rate), item[0])
+                )
 
                 finishing_node = (
                     self.node_list[winner_index]
@@ -584,37 +576,17 @@ class MainFunctions:
 
                 # Calculate the fraction of a second needed
                 # by the winner to find the valid hash.
-                winner_time = (
-                    hashes
-                    / finishing_node.hash_rate
-                )
+                cutoff = Fraction(hashes, finishing_node.hash_rate)
+                winner_time = float(cutoff)
 
-                # Calculate how much work every node performed
-                # during the final fraction of the simulated second.
+                # Count completed hashes, never rounded partial attempts.
+                # Reconstruct each node's next nonce at exactly this cutoff.
                 for node in self.node_list:
-                    work_done = round(
-                        node.hash_rate
-                        * winner_time
-                    )
-
+                    work_done = (node.hash_rate * cutoff.numerator) // cutoff.denominator
                     node.mining_count += work_done
+                    powWorker.advance_state(node, work_done)
 
-                # Save the winning mining state.
-                finishing_node.nonce = (
-                    winner["nonce"]
-                )
-
-                finishing_node.coinbase["extra_nonce"] = (
-                    winner["extra_nonce"]
-                )
-
-                finishing_node.merkle_root = (
-                    winner["merkle_root"]
-                )
-
-                finishing_node.header_hash = (
-                    winner["header_hash"]
-                )
+                finishing_node.header_hash = winner["header_hash"]
 
                 # Advance the simulation time by the fraction
                 # of a second required to find the winning hash.
@@ -724,124 +696,16 @@ class MainFunctions:
         council_branch_compute_work = 0.0
         council_compute_work = 0.0
 
-        # ==========================================================
-        # EVENT-DRIVEN POUW SCHEDULER
-        # ==========================================================
-
-        event_queue = []
-
-        for index, node in enumerate(self.node_list):
-
-            if node.search_rate > 0:
-
-                first_event_time = (
-                    1.0 / node.search_rate
-                )
-
-                heapq.heappush(
-                    event_queue,
-                    (
-                        first_event_time,
-                        index,
-                        node
-                    )
-                )
-
-        finishing_node = None
-
-        # ----------------------------------------------------------
-        # Process events in simulated completion-time order
-        # ----------------------------------------------------------
-
-        while event_queue:
-
-            (
-                event_time,
-                node_index,
-                node
-            ) = heapq.heappop(
-                event_queue
-            )
-
-            pouw_time = event_time
-
-            Node.simulation_time = (
-                event_time
-            )
-
-            (
-                computations,
-                work,
-                _,
-                finished
-            ) = TspFunction.tsp_solver(
-                Node.tsp,
-                1,
-                Node.transcript,
-                Node.transcript_pouw_ratio
-            )
-
-            # Raw B&B nodes processed.
-            node.computations += (
-                computations
-            )
-
-            # Computational work.
-            #
-            # In Proof mode this may additionally contain
-            # transcript-generation overhead.
-            node.work += work
-
-            # ------------------------------------------------------
-            # Search completed
-            # ------------------------------------------------------
-
-            if finished:
-
-                Node.found = True
-                finishing_node = node
-
-                break
-
-            # ------------------------------------------------------
-            # Schedule next operation
-            # ------------------------------------------------------
-
-            transcript_equivalent_work = max(
-                0.0,
-                work - computations
-            )
-
-            transcript_delay = (
-                transcript_equivalent_work
-                / node.search_rate
-            )
-
-            next_event_time = (
-                event_time
-                + transcript_delay
-                + (1.0 / node.search_rate)
-            )
-
-            heapq.heappush(
-                event_queue,
-                (
-                    next_event_time,
-                    node_index,
-                    node
-                )
-            )
-
-        # ----------------------------------------------------------
-        # Safety check
-        # ----------------------------------------------------------
-
-        if finishing_node is None:
-
-            raise RuntimeError(
-                "PoUW event queue became empty "
-                "before TSP completion."
-            )
+        search_result = run_search(
+            Node.tsp, self.node_list, Node.transcript,
+            Node.transcript_pouw_ratio
+        )
+        pouw_time = search_result["time"]
+        finishing_node = search_result["finishing_node"]
+        discovering_node = search_result["discovering_node"]
+        transcript_records = search_result["transcript_records"]
+        Node.found = True
+        Node.simulation_time = pouw_time
 
         # ----------------------------------------------------------
         # Display TSP result
@@ -882,7 +746,7 @@ class MainFunctions:
         )
 
         # ----------------------------------------------------------
-        # PoUW reference-machine compute work
+        # Search + transcript reference-machine compute work
         # ----------------------------------------------------------
         #
         # B&B nodes
@@ -892,10 +756,16 @@ class MainFunctions:
         # = reference seconds
         # ----------------------------------------------------------
 
-        pouw_compute_work = (
-            pouw_computations
-            / MainFunctions.computations_per_second
+        search_compute_work = (
+            pouw_computations / MainFunctions.computations_per_second
         )
+        transcript_compute_work = (
+            transcript_records / MainFunctions.transcript_per_second
+            if transcript_records else 0.0
+        )
+        pouw_compute_work = search_compute_work + transcript_compute_work
+        proof_hash_checks = proof_semantic_checks = 0
+        proof_hash_compute_work = proof_semantic_compute_work = 0.0
 
         # ----------------------------------------------------------
         # Diagnostics
@@ -937,9 +807,7 @@ class MainFunctions:
         # PROOF VALIDATION
         # ==========================================================
         #
-        # Temporary old accounting.
-        # We will normalize this separately when Proof Validation
-        # is redesigned/fixed.
+        # Hash checks and semantic units use separate measured rates.
         # ==========================================================
 
         if self.validation_mode & PROOF_VALIDATION:
@@ -969,6 +837,8 @@ class MainFunctions:
                 proof_result["validation_time"]
             )
 
+            proof_hash_checks = proof_result["hash_checks"]
+            proof_semantic_checks = proof_result["semantic_checks"]
             proof_hash_compute_work = (
                 proof_result["hash_checks"]
                 / MainFunctions.hash_validation_per_second
@@ -1243,7 +1113,7 @@ class MainFunctions:
         # ----------------------------------------------------------
 
         total_computations = (
-            pouw_computations
+            pouw_compute_work * MainFunctions.computations_per_second
             + validation_computations
         )
 
@@ -1281,6 +1151,16 @@ class MainFunctions:
 
             "pouw_computations":
                 pouw_computations,
+            "search_compute_work": search_compute_work,
+            "transcript_records": transcript_records,
+            "transcript_compute_work": transcript_compute_work,
+            "proof_hash_checks": proof_hash_checks,
+            "proof_semantic_checks": proof_semantic_checks,
+            "proof_hash_compute_work": proof_hash_compute_work,
+            "proof_semantic_compute_work": proof_semantic_compute_work,
+            "finishing_node": finishing_node.name,
+            "discovering_node": discovering_node.name,
+
 
             "pouw_compute_work":
                 pouw_compute_work,
@@ -1310,7 +1190,7 @@ class MainFunctions:
             # Validated PoUW
             # ------------------------------------------------------
 
-            # PoUW B&B nodes + equivalent validation computations.
+            # B&B-equivalent search, transcript and validation work.
             "total_computations":
                 total_computations,
 
@@ -1349,22 +1229,24 @@ class MainFunctions:
             "winner": {
 
                 "name":
-                    finishing_node.name,
+                    discovering_node.name,
 
                 "path":
-                    winning_node.path,
+                    Node.tsp.best_path[:],
 
                 "cost":
-                    winning_node.cost,
+                    Node.tsp.best_cost,
 
                 "total_cost":
-                    winning_node.total_cost,
+                    Node.tsp.best_cost,
 
                 "vertex":
-                    winning_node.vertex,
+                    Node.tsp.best_path[-1],
 
                 "visited":
-                    winning_node.visited
+                    Node.tsp.size,
+                "lower_bound": winning_node.cost,
+                "partial_path_cost": winning_node.total_cost
             },
 
             # ------------------------------------------------------

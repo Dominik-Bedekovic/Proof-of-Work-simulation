@@ -127,3 +127,16 @@ Datoteka `timing.txt` služi za evidenciju vremena izvođenja pojedinih pokretan
 Nakon svakog pokretanja programa u datoteku se zapisuje vremenski zapis izvršavanja simulacije. Novi rezultati dodaju se u postojeću datoteku, čime se omogućuje pregled vremena izvođenja kroz više uzastopnih pokretanja programa.
 
 Datoteka `timing.txt` može se koristiti za praćenje i usporedbu trajanja pojedinih pokretanja simulacije pri različitim konfiguracijskim parametrima.
+
+## Ispravci modela i testovi (9. 9. 2026.)
+
+Detalji ispravljenog raspoređivanja, validacije i jedinica rada nalaze se u `MODEL_NOTES.md`. Prije korištenja rezultata u završnom radu potrebno je ponovno pokrenuti mjerenja i obnoviti grafikone.
+
+Regresijski testovi:
+
+```sh
+python proof_validation_tests.py
+python -m unittest -v test_regressions
+```
+
+Sažetak provedene provjere nalazi se u `TEST_RESULTS.md`.

@@ -467,10 +467,10 @@ def benchmark_semantic_validation(
 
         hamiltonian_valid = (
             validation
-            ._validate_hamiltonian_cycle(
+            ._validate_proposed_tour(
                 tsp,
                 proposed_path,
-                debug=False
+                proposed_cost
             )
         )
 

@@ -66,3 +66,13 @@ def pow_worker(args):
         "merkle_root": merkle_root,
         "header_hash": None
     }
+
+
+def advance_state(node, completed_hashes):
+    """Advance the next-attempt cursor, including nonce-space wraparound."""
+    wraps, node.nonce = divmod(node.nonce + completed_hashes, 2 ** 32)
+    if wraps:
+        node.coinbase["extra_nonce"] += wraps
+        node.merkle_root = BlockFunctions.calculate_merkle_root(
+            node.blockData.transactions, node.coinbase
+        )

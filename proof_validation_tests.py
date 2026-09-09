@@ -27,6 +27,7 @@ class TestValidator:
 
     def __init__(self):
 
+        self.name = "test-validator"
         self.hash_validation_rate = 100000.0
         self.semantic_validation_rate = 100000.0
 
@@ -696,10 +697,10 @@ def test_valid_but_nonoptimal_solution():
 
 # ============================================================
 # TEST 10
-# Process an open B&B node out of minimum-bound order
+# Reorder records in a way inconsistent with incumbent history
 # ============================================================
 
-def test_wrong_processing_order():
+def test_invalid_incumbent_history():
 
     (
         tsp,
@@ -790,7 +791,7 @@ def test_wrong_processing_order():
 
     if not swapped:
         raise RuntimeError(
-            "Could not find records for order test."
+            "Could not find records for incumbent-history test."
         )
 
     rebuild_hash_chain(
@@ -918,8 +919,8 @@ if __name__ == "__main__":
 
     results.append(
         print_result(
-            "Wrong B&B processing order",
-            test_wrong_processing_order(),
+            "Invalid incumbent history",
+            test_invalid_incumbent_history(),
             False
         )
     )

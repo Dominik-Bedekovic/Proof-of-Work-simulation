@@ -1,0 +1,72 @@
+
+================ BENCHMARK RESULTS ================
+PoW: 1203486.323592109 hashes/s
+PoUW: 72456.90647393132 B&B nodes/s
+Proof transcript generation: 412536.000418934 records/s
+Proof hash validation: 479638.6156074097 checks/s
+Proof semantic validation: 112604.20776592933 semantic units/s
+===================================================
+
+TOTAL HASH RATE: 2828
+POW OBSERVED RATE: 2814.077922077922
+TSP Matrix [[inf, 600, 50, 600, 600, 400, 340], [600, inf, 80, 20, 700, 20, 300], [50, 80, inf, 600, 10, 360, 840], [600, 20, 600, inf, 70, 500, 100], [600, 700, 10, 70, inf, 70, 70], [400, 20, 360, 500, 70, inf, 60], [340, 300, 840, 100, 70, 60, inf]]
+Best TSP path: [0, 6, 5, 1, 3, 4, 2, 0]
+Best TSP cost: 570
+POUW COMPUTATIONS: 63
+POUW TIME: 0.8644433720639366
+THEORETICAL TIME: 0.3925019111002405
+TOTAL SEARCH RATE: 160.50877261565873
+POUW OBSERVED RATE: 72.87926778775781
+Proof based validation
+Validating transcript root
+Parallel hash validation
+Validating complete B&B transcript
+Complete B&B replay valid.
+Reconstructed best path: [0, 6, 5, 1, 3, 4, 2, 0]
+Reconstructed best cost: 570
+Semantic validator: node1
+Semantic validation rate: 75.5069616378155 semantic units/s
+Semantic checks: 116
+Expected semantic time: 1.536282184898627
+
+================ PROOF VALIDATION DEBUG ================
+Proof valid: True
+Hash checks: 108
+Hash benchmark rate: 479638.6156074097 checks/s
+Hash compute work: 0.00022516952656789288 reference s
+Semantic checks: 116
+Semantic benchmark rate: 112604.20776592933 semantic units/s
+Semantic compute work: 0.0010301568857988817 reference s
+Total Proof compute work: 0.0012553264123667746 reference s
+Proof validation time: 1.720377596389231 simulated s
+========================================================
+
+
+================ SIMULATION AVERAGES ================
+AVG POW RAW HASHES: 234.0
+AVG POUW RAW B&B NODES: 63.0
+AVG POW REFERENCE WORK: 0.00019443511356370707
+AVG POUW REFERENCE WORK: 0.0011312776658151636
+AVG VALIDATION REFERENCE WORK: 0.0012553264123667746
+AVG VALIDATED POUW REFERENCE WORK: 0.002386604078181938
+EXPECTED VALIDATED WORK: 0.002386604078181938
+VALIDATED WORK ERROR: 0.0
+AVG POW TIME: 0.08315334773218143
+AVG POUW TIME: 0.8644433720639366
+AVG VALIDATION TIME: 1.720377596389231
+AVG VALIDATED POUW TIME: 2.5848209684531676
+EXPECTED VALIDATED TIME: 2.5848209684531676
+VALIDATED TIME ERROR: 0.0
+=====================================================
+
+CALIBRATION SMOKE PASS
+{
+  "pouw_computations": 63,
+  "transcript_records": 108,
+  "search_compute_work": 0.0008694823318556424,
+  "transcript_compute_work": 0.0002617953339595212,
+  "validation_compute_work": 0.0012553264123667746,
+  "total_compute_work": 0.002386604078181938,
+  "pouw_time": 0.8644433720639366,
+  "total_time": 2.5848209684531676
+}

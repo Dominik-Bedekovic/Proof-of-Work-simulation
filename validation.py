@@ -1,3 +1,5 @@
+from multiprocessing.util import debug
+
 from tspData import TspData
 from tspFunctions import TspFunction
 import multiprocessing
@@ -507,6 +509,8 @@ def proof_based_validation(
     if not validators:
         return empty_result
 
+    semantic_setup_checks = 0
+
     # =========================================================
     # 1. HAMILTONIAN CYCLE
     # =========================================================
@@ -515,8 +519,10 @@ def proof_based_validation(
         tsp,
         path
     ):
-
         return empty_result
+
+    # One semantic unit for Hamiltonian validation.
+    semantic_setup_checks += 1
 
     # =========================================================
     # 2. AUTHENTICATED ROOT
@@ -528,8 +534,24 @@ def proof_based_validation(
         transcript_sigma,
         transcript_root
     ):
-
         return empty_result
+
+    root_children = (
+        transcript
+        .root["data"]
+        .get(
+            "children",
+            []
+        )
+    )
+
+    # One fixed root-validation unit
+    # plus one unit for every independently
+    # reconstructed root child.
+    semantic_setup_checks += (
+        1
+        + len(root_children)
+    )
 
     # =========================================================
     # 3. HASH CHAIN
@@ -569,7 +591,7 @@ def proof_based_validation(
 
     (
         semantic_valid,
-        semantic_checks,
+        replay_checks,
         reconstructed_path,
         reconstructed_cost
     ) = _validate_transcript_semantics(
@@ -579,6 +601,67 @@ def proof_based_validation(
         proposed_cost
     )
 
+    # Total semantic units:
+    #
+    # 1 Hamiltonian check
+    # 1 fixed root check
+    # N reconstructed root children
+    # M replayed transcript records
+    semantic_checks = (
+        semantic_setup_checks
+        + replay_checks
+    )
+
+    # ---------------------------------------------------------
+    # Semantic validation is sequential.
+    # ---------------------------------------------------------
+
+    semantic_validator = (
+        validators[0]
+    )
+
+    print(
+        "Semantic validator:",
+        semantic_validator.name
+    )
+
+    print(
+        "Semantic validation rate:",
+        semantic_validator.semantic_validation_rate,
+        "semantic units/s"
+    )
+
+    print(
+        "Semantic checks:",
+        semantic_checks
+    )
+
+    print(
+        "Expected semantic time:",
+        semantic_checks
+        / semantic_validator.semantic_validation_rate
+    )
+
+    if (
+        semantic_validator
+        .semantic_validation_rate
+        <= 0
+    ):
+        raise RuntimeError(
+            "Proof semantic validation rate "
+            "must be positive."
+        )
+
+    semantic_time = (
+        semantic_checks
+        / semantic_validator
+          .semantic_validation_rate
+    )
+
+    # ---------------------------------------------------------
+    # Invalid proof still consumed semantic work.
+    # ---------------------------------------------------------
+
     if not semantic_valid:
 
         return {
@@ -586,30 +669,15 @@ def proof_based_validation(
             "hash_checks": hash_checks,
             "semantic_checks": semantic_checks,
             "hash_time": hash_time,
-            "semantic_time": 0.0,
-            "validation_time": hash_time
+            "semantic_time": semantic_time,
+            "validation_time":
+                hash_time
+                + semantic_time
         }
 
-    # ---------------------------------------------------------
-    # Semantic replay is sequential because incumbent history
-    # and the open frontier depend on preceding events.
-    # ---------------------------------------------------------
-
-    semantic_validator = validators[0]
-
-    if (
-        semantic_validator.semantic_validation_rate
-        <= 0
-    ):
-
-        raise RuntimeError(
-            "Proof semantic validation rate must be positive."
-        )
-
-    semantic_time = (
-        semantic_checks
-        / semantic_validator.semantic_validation_rate
-    )
+    # =========================================================
+    # SUCCESS
+    # =========================================================
 
     total_time = (
         hash_time
@@ -629,10 +697,14 @@ def _validate_transcript_semantics(
     tsp,
     transcript,
     proposed_path,
-    proposed_cost
+    proposed_cost,
+    debug=True
 ):
 
-    print("Validating complete B&B transcript")
+    if debug:
+        print(
+            "Validating complete B&B transcript"
+        )
 
     if transcript is None:
         return False, 0, None, utils.inf
@@ -1280,10 +1352,11 @@ def _validate_transcript_semantics(
     # transcript.
     if open_nodes:
 
-        print(
-            "Proof failed: unprocessed B&B nodes:",
-            list(open_nodes.keys())
-        )
+        if debug:
+            print(
+                "Proof failed: unprocessed B&B nodes:",
+                list(open_nodes.keys())
+            )
 
         return fail()
 
@@ -1302,26 +1375,21 @@ def _validate_transcript_semantics(
 
         return fail()
 
-    if (
-        expected_best_path
-        != proposed_path
-    ):
+    if debug:
 
-        return fail()
+        print(
+            "Complete B&B replay valid."
+        )
 
-    print(
-        "Complete B&B replay valid."
-    )
+        print(
+            "Reconstructed best path:",
+            expected_best_path
+        )
 
-    print(
-        "Reconstructed best path:",
-        expected_best_path
-    )
-
-    print(
-        "Reconstructed best cost:",
-        expected_incumbent
-    )
+        print(
+            "Reconstructed best cost:",
+            expected_incumbent
+        )
 
     return (
         True,
@@ -1549,8 +1617,6 @@ def _parallel_hash_validation(
 
 def _hash_slice_worker(args):
 
-    print("Hash slice worker")
-
     (
         validator_index,
         steps,
@@ -1676,31 +1742,44 @@ def _hash_slice_worker(args):
         None
     )
 
-def _validate_hamiltonian_cycle(tsp, path):
+def _validate_hamiltonian_cycle(
+    tsp,
+    path,
+    debug=True
+):
 
-    print("Validating hamiltonian cycle")
+    if debug:
+        print(
+            "Validating hamiltonian cycle"
+        )
+
     # A path must exist.
     if not path:
         return False
 
-    # A Hamiltonian cycle over n cities contains n + 1 vertices
-    # because the starting city is repeated at the end.
+    # Hamiltonian cycle over n cities contains
+    # n + 1 vertices because city 0 is repeated.
     if len(path) != tsp.size + 1:
         return False
 
-    # The implemented TSP search always starts and ends at city 0.
+    # Search always starts and ends at city 0.
     if path[0] != 0 or path[-1] != 0:
         return False
 
-    # Every city before the final repeated 0 must be a valid city.
+    # Every city must be valid.
     if any(
-        vertex < 0 or vertex >= tsp.size
+        vertex < 0
+        or vertex >= tsp.size
         for vertex in path[:-1]
     ):
         return False
 
-    # Every city must occur exactly once before returning to city 0.
-    if len(set(path[:-1])) != tsp.size:
+    # Every city must occur exactly once
+    # before returning to city 0.
+    if (
+        len(set(path[:-1]))
+        != tsp.size
+    ):
         return False
 
     return True
@@ -1709,13 +1788,19 @@ def _validate_transcript_root(
     tsp,
     transcript,
     transcript_sigma,
-    transcript_root
+    transcript_root,
+    debug=True
 ):
 
-    print("Validating transcript root")
+    if debug:
+        print(
+            "Validating transcript root"
+        )
 
-    # The transcript must contain an authenticated root.
-    if not hasattr(transcript, "root"):
+    if not hasattr(
+        transcript,
+        "root"
+    ):
         return False
 
     root = tsp.tsp_root

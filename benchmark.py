@@ -6,6 +6,7 @@ from transcript import Transcript
 import validation
 import utils
 import time
+import secrets
 
 
 # Validation modes used by the simulation.
@@ -173,28 +174,137 @@ def benchmark_branch_validation(duration=2.0, size=0):
         total_computations / elapsed
     )
 
-# =========================================================
-# PoUW transcript benchmark
-# =========================================================
+def _create_proof_benchmark_transcript(size):
 
-def benchmark_transcript(duration=2.0):
+    tsp = TspData(
+        size,
+        True
+    )
+
+    sigma = secrets.token_bytes(32)
+
+    root = tsp.tsp_root
+
+    root_children = []
+
+    for neighbour in range(root.size):
+
+        if (
+            root.matrix[
+                root.vertex
+            ][neighbour]
+            == utils.inf
+        ):
+            continue
+
+        if neighbour in root.path:
+            continue
+
+        child = TspFunction._create_child(
+            root,
+            tsp.matrix,
+            root.vertex,
+            neighbour
+        )
+
+        edge_cost = tsp.matrix[
+            root.vertex
+        ][neighbour]
+
+        reduced_edge_cost = root.matrix[
+            root.vertex
+        ][neighbour]
+
+        reduction_cost = (
+            child.cost
+            - root.cost
+            - reduced_edge_cost
+        )
+
+        root_children.append({
+            "selected_neighbour":
+                neighbour,
+
+            "child_path":
+                child.path[:],
+
+            "edge_cost":
+                edge_cost,
+
+            "reduction_cost":
+                reduction_cost,
+
+            "child_lower_bound":
+                child.cost
+        })
 
     root_data = {
-        "path": [0],
-        "vertex": 0,
-        "visited": 0,
-        "lower_bound": 0,
-        "children": []
+        "path":
+            root.path[:],
+
+        "vertex":
+            root.vertex,
+
+        "visited":
+            root.visited,
+
+        "lower_bound":
+            root.cost,
+
+        "children":
+            root_children
     }
 
-    root_hash = utils.create_hash(
-        str(root_data)
+    transcript_root = utils.create_hash(
+        sigma.hex()
+        + str(root_data)
+        + str(tsp.matrix)
     )
 
     transcript = Transcript(
         root_data,
-        root_hash
+        transcript_root
     )
+
+    # Generate a genuine Proof transcript.
+    TspFunction.tsp_solver(
+        tsp,
+        None,
+        transcript,
+        0
+    )
+
+    return (
+        tsp,
+        transcript,
+        sigma,
+        transcript_root
+    )
+
+# =========================================================
+# PoUW transcript benchmark
+# =========================================================
+
+def benchmark_transcript(
+    duration=2.0,
+    size=10
+):
+
+    (
+        tsp,
+        source_transcript,
+        sigma,
+        transcript_root
+    ) = _create_proof_benchmark_transcript(
+        size
+    )
+
+    source_steps = (
+        source_transcript.steps
+    )
+
+    if not source_steps:
+        return 0.0
 
     computations = 0
 
@@ -205,22 +315,27 @@ def benchmark_transcript(duration=2.0):
         < duration
     ):
 
-        data = Transcript.create_step_data(
-            parent_path=[0, 1, 2, 3],
-            parent_vertex=3,
-            parent_lower_bound=500,
-            selected_neighbour=4,
-            child_path=[0, 1, 2, 3, 4],
-            edge_cost=70,
-            reduction_cost=30,
-            child_lower_bound=600,
-            incumbent_cost=1000,
-            pruned=False
+        benchmark_transcript = Transcript(
+            source_transcript.root["data"],
+            transcript_root
         )
 
-        transcript.add_step(data)
+        for source_step in source_steps:
 
-        computations += 1
+            if (
+                time.perf_counter()
+                - start
+                >= duration
+            ):
+                break
+
+            data = source_step["data"]
+
+            benchmark_transcript.add_step(
+                data
+            )
+
+            computations += 1
 
     elapsed = (
         time.perf_counter()
@@ -230,11 +345,10 @@ def benchmark_transcript(duration=2.0):
     if elapsed <= 0:
         return 0.0
 
-    computation_rate = (
-        computations / elapsed
+    return (
+        computations
+        / elapsed
     )
-
-    return computation_rate
 
 # =========================================================
 # PoUW hash-chain validation benchmark
@@ -242,50 +356,31 @@ def benchmark_transcript(duration=2.0):
 
 def benchmark_hash_validation(
     duration=2.0,
-    steps=1000
+    size=10
 ):
 
-    root_data = {
-        "path": [0],
-        "vertex": 0,
-        "visited": 0,
-        "lower_bound": 0,
-        "children": []
-    }
-
-    root_hash = utils.create_hash(
-        str(root_data)
+    (
+        tsp,
+        transcript,
+        sigma,
+        transcript_root
+    ) = _create_proof_benchmark_transcript(
+        size
     )
 
-    transcript = Transcript(
-        root_data,
-        root_hash
+    total_steps = len(
+        transcript.steps
     )
 
-    # Generate a valid transcript hash chain.
-    for _ in range(steps):
-
-        data = Transcript.create_step_data(
-            parent_path=[0, 1, 2, 3],
-            parent_vertex=3,
-            parent_lower_bound=500,
-            selected_neighbour=4,
-            child_path=[0, 1, 2, 3, 4],
-            edge_cost=70,
-            reduction_cost=30,
-            child_lower_bound=600,
-            incumbent_cost=1000,
-            pruned=False
-        )
-
-        transcript.add_step(data)
+    if total_steps == 0:
+        return 0.0
 
     arguments = (
         0,
         transcript.steps,
         0,
-        len(transcript.steps),
-        root_hash
+        total_steps,
+        transcript_root
     )
 
     computations = 0
@@ -308,11 +403,13 @@ def benchmark_hash_validation(
 
         if not valid:
             raise RuntimeError(
-                "Hash validation benchmark generated "
-                "an invalid transcript."
+                "Hash validation benchmark "
+                "generated an invalid transcript."
             )
 
-        computations += steps_checked
+        computations += (
+            steps_checked
+        )
 
     elapsed = (
         time.perf_counter()
@@ -322,72 +419,40 @@ def benchmark_hash_validation(
     if elapsed <= 0:
         return 0.0
 
-    validation_rate = (
-        computations / elapsed
+    return (
+        computations
+        / elapsed
     )
-
-    return validation_rate
 
 def benchmark_semantic_validation(
     duration=2.0,
-    size=0
+    size=10
 ):
 
-    print(
-        "\n===== ENTER benchmark_semantic_validation ====="
-    )
-
-    # Create deterministic TSP instance.
-    benchmark_tsp = TspData(
-        size,
-        True
-    )
-
-    root = benchmark_tsp.tsp_root
-
-    root_data = {
-        "path": root.path[:],
-        "vertex": root.vertex,
-        "visited": root.visited,
-        "lower_bound": root.cost,
-        "children": []
-    }
-
-    root_hash = utils.create_hash(
-        "semantic-validation-benchmark"
-    )
-
-    transcript = Transcript(
-        root_data,
-        root_hash
-    )
-
-    # ---------------------------------------------------------
-    # Generate one genuine complete B&B transcript.
-    # This work is OUTSIDE the timed benchmark section.
-    # ---------------------------------------------------------
-
-    TspFunction.tsp_solver(
-        benchmark_tsp,
-        None,
+    (
+        tsp,
         transcript,
-        0
+        transcript_sigma,
+        transcript_root
+    ) = _create_proof_benchmark_transcript(
+        size
     )
 
     proposed_path = (
-        benchmark_tsp.best_path
+        tsp.best_path[:]
     )
 
     proposed_cost = (
-        benchmark_tsp.best_cost
+        tsp.best_cost
     )
 
-    if proposed_path is None:
+    if not proposed_path:
         raise RuntimeError(
-            "Semantic benchmark failed to produce a TSP solution."
+            "Semantic validation benchmark "
+            "did not generate a TSP solution."
         )
 
-    total_checks = 0
+    total_units = 0
 
     start = time.perf_counter()
 
@@ -396,25 +461,101 @@ def benchmark_semantic_validation(
         < duration
     ):
 
-        (
-            valid,
-            checks,
-            _,
-            _
-        ) = validation._validate_transcript_semantics(
-            benchmark_tsp,
-            transcript,
-            proposed_path,
-            proposed_cost
+        # =====================================================
+        # 1. HAMILTONIAN VALIDATION
+        # =====================================================
+
+        hamiltonian_valid = (
+            validation
+            ._validate_hamiltonian_cycle(
+                tsp,
+                proposed_path,
+                debug=False
+            )
         )
 
-        if not valid:
-
+        if not hamiltonian_valid:
             raise RuntimeError(
-                "Semantic validation benchmark failed."
+                "Semantic validation benchmark "
+                "generated an invalid Hamiltonian cycle."
             )
 
-        total_checks += checks
+        # =====================================================
+        # 2. AUTHENTICATED ROOT VALIDATION
+        # =====================================================
+
+        root_valid = (
+            validation
+            ._validate_transcript_root(
+                tsp,
+                transcript,
+                transcript_sigma,
+                transcript_root,
+                debug=False
+            )
+        )
+
+        if not root_valid:
+            raise RuntimeError(
+                "Semantic validation benchmark "
+                "generated an invalid transcript root."
+            )
+
+        # =====================================================
+        # 3. COMPLETE SEMANTIC B&B REPLAY
+        # =====================================================
+
+        (
+            semantic_valid,
+            replay_checks,
+            reconstructed_path,
+            reconstructed_cost
+        ) = (
+            validation
+            ._validate_transcript_semantics(
+                tsp,
+                transcript,
+                proposed_path,
+                proposed_cost,
+                debug=False
+            )
+        )
+
+        if not semantic_valid:
+            raise RuntimeError(
+                "Semantic validation benchmark "
+                "generated an invalid B&B transcript."
+            )
+
+        if (
+            reconstructed_path
+            != proposed_path
+        ):
+            raise RuntimeError(
+                "Semantic validation benchmark "
+                "reconstructed the wrong path."
+            )
+
+        if (
+            reconstructed_cost
+            != proposed_cost
+        ):
+            raise RuntimeError(
+                "Semantic validation benchmark "
+                "reconstructed the wrong cost."
+            )
+
+        # =====================================================
+        # COUNT THE EXACT SAME SEMANTIC UNITS
+        # USED BY proof_based_validation()
+        # =====================================================
+
+        total_units += (
+            _semantic_validation_units(
+                transcript,
+                replay_checks
+            )
+        )
 
     elapsed = (
         time.perf_counter()
@@ -424,29 +565,34 @@ def benchmark_semantic_validation(
     if elapsed <= 0:
         return 0.0
 
-    rate = (
-        total_checks
+    return (
+        total_units
         / elapsed
     )
 
-    print(
-        "Semantic validation checks:",
-        total_checks
+def _semantic_validation_units(
+    transcript,
+    replay_checks
+):
+
+    root_children = (
+        transcript
+        .root["data"]
+        .get(
+            "children",
+            []
+        )
     )
 
-    print(
-        "Semantic validation elapsed:",
-        elapsed
+    hamiltonian_units = 1
+    root_fixed_units = 1
+    root_child_units = len(
+        root_children
     )
 
-    print(
-        "Semantic validation rate:",
-        rate,
-        "records/s"
+    return (
+        hamiltonian_units
+        + root_fixed_units
+        + root_child_units
+        + replay_checks
     )
-
-    print(
-        "===== EXIT benchmark_semantic_validation =====\n"
-    )
-
-    return rate

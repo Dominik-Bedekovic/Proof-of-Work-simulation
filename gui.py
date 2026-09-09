@@ -1476,6 +1476,10 @@ def show_comparison_graph(data):
         data["average_pouw_compute_work"]
     )
 
+    average_validation_compute_work = (
+        data["average_validation_compute_work"]
+    )
+
     average_validated_pouw_compute_work = (
         data["average_validated_pouw_compute_work"]
     )
@@ -1492,8 +1496,14 @@ def show_comparison_graph(data):
         data["average_pouw_simulation_time"]
     )
 
+    average_validation_time = (
+        data["average_validation_time"]
+    )
+
     average_validated_pouw_simulation_time = (
-        data["average_validated_pouw_simulation_time"]
+        data[
+            "average_validated_pouw_simulation_time"
+        ]
     )
 
     # --------------------------------------------------------
@@ -1524,9 +1534,6 @@ def show_comparison_graph(data):
     # Reference computational work
     # ========================================================
 
-    # If validation is enabled, compare PoW against the
-    # complete validated PoUW mechanism rather than against
-    # the unvalidated baseline.
     if selected_validation == "none":
 
         main_pouw_work = (
@@ -1545,15 +1552,19 @@ def show_comparison_graph(data):
 
     create_comparison_graph(
         comparison_frame,
+
         "PoW vs PoUW - Reference Compute Work",
+
         [
             "PoW",
             main_pouw_name
         ],
+
         [
             average_pow_compute_work,
             main_pouw_work
         ],
+
         "Reference Compute Work [s]"
     )
 
@@ -1577,21 +1588,25 @@ def show_comparison_graph(data):
 
     create_comparison_graph(
         comparison_frame,
+
         "PoW vs PoUW - Simulated Completion Time",
+
         [
             "PoW",
             main_pouw_name
         ],
+
         [
             average_pow_simulation_time,
             main_pouw_time
         ],
+
         "Simulation Time [s]"
     )
 
     # --------------------------------------------------------
-    # No validation selected:
-    # only the two main PoW vs PoUW graphs are needed.
+    # No validation:
+    # only the two main comparison graphs are needed.
     # --------------------------------------------------------
 
     if selected_validation == "none":
@@ -1599,45 +1614,86 @@ def show_comparison_graph(data):
 
     # ========================================================
     # GRAPH 3
-    # Base PoUW vs PoUW + Validation
+    # BASE POUW + VALIDATION COMPONENT + TOTAL
     # Reference computational work
     # ========================================================
 
     create_comparison_graph(
         comparison_frame,
-        "PoUW Validation Overhead - Reference Compute Work",
+
+        "PoUW Validation Work Breakdown",
+
         [
-            "PoUW",
+            "Base PoUW",
+            "Validation",
             validation_name
         ],
+
         [
             average_pouw_compute_work,
+            average_validation_compute_work,
             average_validated_pouw_compute_work
         ],
+
         "Reference Compute Work [s]"
     )
 
     # ========================================================
     # GRAPH 4
-    # Base PoUW vs PoUW + Validation
+    # BASE POUW + VALIDATION COMPONENT + TOTAL
     # Simulated completion time
     # ========================================================
 
     create_comparison_graph(
         comparison_frame,
-        "PoUW Validation Overhead - Simulated Completion Time",
+
+        "PoUW Validation Time Breakdown",
+
         [
-            "PoUW",
+            "Base PoUW",
+            "Validation",
             validation_name
         ],
+
         [
             average_pouw_simulation_time,
+            average_validation_time,
             average_validated_pouw_simulation_time
         ],
+
         "Simulation Time [s]"
     )
 
+    # ========================================================
+    # GRAPH 5
+    # PROOF VALIDATION BENCHMARK THROUGHPUT
+    # ========================================================
 
+    if selected_validation == "proof":
+
+        create_benchmark_graph(
+            comparison_frame,
+
+            "Proof Validation Benchmark Throughput",
+
+            [
+                "Transcript\nGeneration",
+                "Hash\nValidation",
+                "Semantic\nValidation"
+            ],
+
+            [
+                MainFunctions.transcript_per_second,
+                MainFunctions.hash_validation_per_second,
+                MainFunctions.semantic_validation_per_second
+            ],
+
+            [
+                "records/s",
+                "checks/s",
+                "semantic units/s"
+            ]
+        )
 
 def create_comparison_graph(
 
@@ -1723,7 +1779,94 @@ def create_comparison_graph(
 
     )
 
+def create_benchmark_graph(
+    parent,
+    title,
+    methods,
+    values,
+    units
+):
 
+    frame = ttk.LabelFrame(
+        parent,
+        text=title,
+        padding=10
+    )
+
+    frame.pack(
+        fill="both",
+        expand=True,
+        pady=10
+    )
+
+    figure = Figure(
+        figsize=(7, 3.5),
+        dpi=100
+    )
+
+    ax = figure.add_subplot(111)
+
+    bars = ax.bar(
+        methods,
+        values
+    )
+
+    ax.set_title(
+        title
+    )
+
+    ax.set_ylabel(
+        "Benchmark Throughput"
+    )
+
+    # --------------------------------------------------------
+    # Display the measured value and its correct unit
+    # above each bar.
+    # --------------------------------------------------------
+
+    for bar, value, unit in zip(
+        bars,
+        values,
+        units
+    ):
+
+        ax.text(
+            bar.get_x()
+            + bar.get_width() / 2,
+
+            bar.get_height(),
+
+            f"{value:,.0f}\n{unit}",
+
+            ha="center",
+            va="bottom"
+        )
+
+    # Give value labels some space.
+    if values:
+
+        maximum_value = max(values)
+
+        if maximum_value > 0:
+
+            ax.set_ylim(
+                0,
+                maximum_value * 1.20
+            )
+
+    figure.tight_layout()
+
+    canvas = FigureCanvasTkAgg(
+        figure,
+        master=frame
+    )
+
+    canvas.draw()
+
+    canvas.get_tk_widget().pack(
+        fill="both",
+        expand=True
+    )
 
 # ============================================================
 
@@ -2887,7 +3030,7 @@ def start_gui():
 
         results_frame,
 
-        text="Benchmark Speed Results",
+        text="Average Simulated Node Rates",
 
         padding=15
 

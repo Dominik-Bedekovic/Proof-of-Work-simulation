@@ -20,6 +20,8 @@ class MainFunctions:
 
     benchmarks_done = False
     benchmarked_validation_mode = None
+    benchmarked_num_of_cities = None
+
     hashes_per_second = 0.0
     computations_per_second = 0.0
 
@@ -58,6 +60,9 @@ class MainFunctions:
             or
             MainFunctions.benchmarked_validation_mode
             != self.validation_mode
+            or
+            MainFunctions.benchmarked_num_of_cities
+            != self.num_of_cities
         ):
 
             self.run_benchmarks(
@@ -284,7 +289,10 @@ class MainFunctions:
 
             MainFunctions.transcript_per_second = (
                 utils.average_runs(
-                    benchmark.benchmark_transcript,
+                    lambda:
+                        benchmark.benchmark_transcript(
+                            size=self.num_of_cities
+                        ),
                     self.runs
                 )
             )
@@ -305,7 +313,7 @@ class MainFunctions:
                 utils.average_runs(
                     lambda:
                         benchmark.benchmark_hash_validation(
-                            steps=1000
+                            size=self.num_of_cities
                         ),
                     self.runs
                 )
@@ -320,7 +328,7 @@ class MainFunctions:
             benchmark_progress(
                 completed_benchmarks,
                 total_benchmarks,
-                "Benchmarking Proof semantic replay..."
+                "Benchmarking Proof semantic validation..."
             )
 
             MainFunctions.semantic_validation_per_second = (
@@ -349,6 +357,10 @@ class MainFunctions:
 
         MainFunctions.benchmarked_validation_mode = (
             self.validation_mode
+        )
+
+        MainFunctions.benchmarked_num_of_cities = (
+            self.num_of_cities
         )
 
         # =========================================================
@@ -400,9 +412,9 @@ class MainFunctions:
             )
 
             print(
-                "Proof semantic replay:",
+                "Proof semantic validation:",
                 MainFunctions.semantic_validation_per_second,
-                "records/s"
+                "semantic units/s"
             )
 
         print(
@@ -700,18 +712,6 @@ class MainFunctions:
         # Normalized validation work measured in
         # reference-machine compute seconds.
         validation_compute_work = 0.0
-
-        # ----------------------------------------------------------
-        # Proof Validation temporary values
-        # ----------------------------------------------------------
-        #
-        # Proof Validation accounting will be corrected separately.
-        # For now its old computation count is kept only as a
-        # diagnostic value and is NOT mixed into normalized work.
-        # ----------------------------------------------------------
-
-        proof_computations = 0
-        proof_time = 0.0
 
         # ----------------------------------------------------------
         # Council Validation values
@@ -1022,7 +1022,7 @@ class MainFunctions:
             print(
                 "Semantic benchmark rate:",
                 MainFunctions.semantic_validation_per_second,
-                "records/s"
+                "semantic units/s"
             )
 
             print(
@@ -1341,16 +1341,6 @@ class MainFunctions:
 
             "council_compute_work":
                 council_compute_work,
-
-            # ------------------------------------------------------
-            # Temporary Proof details
-            # ------------------------------------------------------
-
-            "proof_computations":
-                proof_computations,
-
-            "proof_time":
-                proof_time,
 
             # ------------------------------------------------------
             # Winner

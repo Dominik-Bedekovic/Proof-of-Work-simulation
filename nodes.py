@@ -21,6 +21,19 @@ class Node:
     tsp = None
     transcript = None
 
+    # ---------------------------------------------------------
+    # BENCHMARK-DERIVED RATE RATIOS
+    # ---------------------------------------------------------
+
+    pouw_pow_ratio = 0.0
+
+    initial_validation_pow_ratio = 0.0
+    branch_validation_pow_ratio = 0.0
+
+    transcript_pouw_ratio = 0.0
+    hash_validation_pow_ratio = 0.0
+    semantic_validation_pow_ratio = 0.0
+
     @classmethod
     def initialize_tsp(cls, num_of_nodes):
         # Generate the shared TSP problem used during the PoUW simulation.
@@ -57,6 +70,9 @@ class Node:
 
         # Total number of hash operations performed by the node.
         self.mining_count = 0
+
+        self.search_credit = 0.0
+        self.previous_search_credit = 0.0
 
         # Calculate the corresponding PoUW search rate using the
         # measured ratio between PoW and PoUW computational rates.
@@ -100,9 +116,7 @@ class Node:
             "transcript_pouw_ratio",
             0
         )
-        self.transcript_rate = round(
-            self.search_rate * transcript_ratio
-        )
+        self.transcript_rate = self.search_rate * transcript_ratio
 
         # Calculate the corresponding hash validation rate.
         hash_validation_ratio = getattr(
@@ -110,20 +124,17 @@ class Node:
             "hash_validation_pow_ratio",
             0
         )
-        self.hash_validation_rate = round(
-            self.hash_rate * hash_validation_ratio
-        )
+        self.hash_validation_rate = self.hash_rate * hash_validation_ratio
 
-        # Calculate the corresponding B&B proof-validation rate.
-        bnb_validation_ratio = getattr(
+        semantic_validation_ratio = getattr(
             Node,
-            "bnb_validation_pow_ratio",
-            0
+            "semantic_validation_pow_ratio",
+            0.0
         )
 
-        self.bnb_validation_rate = (
+        self.semantic_validation_rate = (
             self.hash_rate
-            * bnb_validation_ratio
+            * semantic_validation_ratio
         )
 
 

@@ -20,6 +20,15 @@ class MainFunctions:
 
     benchmarks_done = False
     benchmarked_validation_mode = None
+    hashes_per_second = 0.0
+    computations_per_second = 0.0
+
+    initial_validations_per_second = 0.0
+    branch_validation_nodes_per_second = 0.0
+
+    transcript_per_second = 0.0
+    hash_validation_per_second = 0.0
+    semantic_validation_per_second = 0.0
 
     def __init__(
         self,
@@ -63,15 +72,11 @@ class MainFunctions:
         # have been initialized.
         self.create_nodes()
 
-
     def set_ratios(self):
 
         # -----------------------------------------------------
         # RESET RATIOS
         # -----------------------------------------------------
-        # Always reset mode-specific ratios first so that
-        # values from a previous simulation mode cannot leak
-        # into a new one.
 
         Node.pouw_pow_ratio = 0.0
 
@@ -80,10 +85,10 @@ class MainFunctions:
 
         Node.transcript_pouw_ratio = 0.0
         Node.hash_validation_pow_ratio = 0.0
-        Node.bnb_validation_pow_ratio = 0.0
+        Node.semantic_validation_pow_ratio = 0.0
 
         # -----------------------------------------------------
-        # POUW / POW RATIO
+        # BASE POUW / POW RATIO
         # -----------------------------------------------------
 
         Node.pouw_pow_ratio = (
@@ -92,49 +97,45 @@ class MainFunctions:
         )
 
         # -----------------------------------------------------
-        # COUNCIL VALIDATION RATIOS
+        # COUNCIL VALIDATION
         # -----------------------------------------------------
 
         if self.validation_mode & COUNCIL_VALIDATION:
 
-            # Complete proposed-tour validations per second
-            # relative to SHA-256 hashes per second.
             Node.initial_validation_pow_ratio = (
                 MainFunctions.initial_validations_per_second
                 / MainFunctions.hashes_per_second
             )
 
-            # B&B branch-validation nodes per second
-            # relative to SHA-256 hashes per second.
             Node.branch_validation_pow_ratio = (
                 MainFunctions.branch_validation_nodes_per_second
                 / MainFunctions.hashes_per_second
             )
 
         # -----------------------------------------------------
-        # PROOF VALIDATION RATIOS
+        # PROOF VALIDATION
         # -----------------------------------------------------
 
         if self.validation_mode & PROOF_VALIDATION:
 
-            # Transcript generation is measured relative
-            # to PoUW B&B search throughput.
+            # Transcript-generation throughput is compared against
+            # the PoUW B&B throughput because tsp_solver converts
+            # transcript overhead into B&B-equivalent work.
             Node.transcript_pouw_ratio = (
                 MainFunctions.transcript_per_second
                 / MainFunctions.computations_per_second
             )
 
-            # Transcript hash validation is measured relative
-            # to SHA-256 hashing throughput.
+            # Hash validation is derived from each node's hash rate.
             Node.hash_validation_pow_ratio = (
                 MainFunctions.hash_validation_per_second
                 / MainFunctions.hashes_per_second
             )
 
-            # B&B proof validation throughput relative
-            # to SHA-256 hashing throughput.
-            Node.bnb_validation_pow_ratio = (
-                MainFunctions.bnb_validation_per_second
+            # Complete semantic replay is also derived from
+            # each simulated node's computational capability.
+            Node.semantic_validation_pow_ratio = (
+                MainFunctions.semantic_validation_per_second
                 / MainFunctions.hashes_per_second
             )
 
@@ -150,33 +151,33 @@ class MainFunctions:
                     message
                 )
 
-        # ---------------------------------------------------------
+        # =========================================================
         # NUMBER OF BENCHMARKS
-        # ---------------------------------------------------------
+        # =========================================================
 
-        # Base benchmarks:
-        # 1. PoW hashing
-        # 2. PoUW B&B solving
+        # Base:
+        # 1. PoW
+        # 2. PoUW
         total_benchmarks = 2
 
-        # Council validation now has TWO separate benchmarks:
-        # 1. Initial proposed-path validation
-        # 2. B&B branch validation
+        # Council:
+        # 3. Initial validation
+        # 4. Branch validation
         if self.validation_mode & COUNCIL_VALIDATION:
             total_benchmarks += 2
 
-        # Proof validation currently benchmarks:
-        # 1. Transcript generation
-        # 2. Transcript hash validation
-        # 3. B&B proof validation
+        # Proof:
+        # 3/5. Transcript generation
+        # 4/6. Hash-chain validation
+        # 5/7. Complete semantic B&B replay
         if self.validation_mode & PROOF_VALIDATION:
             total_benchmarks += 3
 
         completed_benchmarks = 0
 
-        # ---------------------------------------------------------
-        # POW BENCHMARK
-        # ---------------------------------------------------------
+        # =========================================================
+        # POW
+        # =========================================================
 
         benchmark_progress(
             completed_benchmarks,
@@ -193,9 +194,9 @@ class MainFunctions:
 
         completed_benchmarks += 1
 
-        # ---------------------------------------------------------
-        # POUW BENCHMARK
-        # ---------------------------------------------------------
+        # =========================================================
+        # POUW
+        # =========================================================
 
         benchmark_progress(
             completed_benchmarks,
@@ -205,34 +206,24 @@ class MainFunctions:
 
         MainFunctions.computations_per_second = (
             utils.average_runs(
-                lambda: benchmark.benchmark_tsp_pouw(
-                    size=self.num_of_cities
-                ),
+                lambda:
+                    benchmark.benchmark_tsp_pouw(
+                        size=self.num_of_cities
+                    ),
                 self.runs
             )
         )
 
         completed_benchmarks += 1
 
-        # Relative capability of the reference machine:
-        #
-        # B&B nodes/s
-        # -------------
-        # SHA-256 hashes/s
-        #
-        Node.pouw_pow_ratio = (
-            MainFunctions.computations_per_second
-            / MainFunctions.hashes_per_second
-        )
-
         # =========================================================
-        # COUNCIL VALIDATION BENCHMARKS
+        # COUNCIL VALIDATION
         # =========================================================
 
         if self.validation_mode & COUNCIL_VALIDATION:
 
             # -----------------------------------------------------
-            # INITIAL COUNCIL VALIDATION
+            # Initial complete-tour validation
             # -----------------------------------------------------
 
             benchmark_progress(
@@ -241,10 +232,6 @@ class MainFunctions:
                 "Benchmarking initial council validation..."
             )
 
-            # Unit:
-            #
-            # complete proposed-tour validations / second
-            #
             MainFunctions.initial_validations_per_second = (
                 utils.average_runs(
                     lambda:
@@ -255,17 +242,10 @@ class MainFunctions:
                 )
             )
 
-            # Convert the reference-machine rate into a rate
-            # relative to SHA-256 hashing performance.
-            Node.initial_validation_pow_ratio = (
-                MainFunctions.initial_validations_per_second
-                / MainFunctions.hashes_per_second
-            )
-
             completed_benchmarks += 1
 
             # -----------------------------------------------------
-            # ULTIMATE / BRANCH COUNCIL VALIDATION
+            # Branch validation
             # -----------------------------------------------------
 
             benchmark_progress(
@@ -274,10 +254,6 @@ class MainFunctions:
                 "Benchmarking council branch validation..."
             )
 
-            # Unit:
-            #
-            # B&B validation nodes examined / second
-            #
             MainFunctions.branch_validation_nodes_per_second = (
                 utils.average_runs(
                     lambda:
@@ -288,23 +264,16 @@ class MainFunctions:
                 )
             )
 
-            # Convert the reference-machine branch-validation
-            # throughput into a rate relative to SHA-256 hashing.
-            Node.branch_validation_pow_ratio = (
-                MainFunctions.branch_validation_nodes_per_second
-                / MainFunctions.hashes_per_second
-            )
-
             completed_benchmarks += 1
 
         # =========================================================
-        # PROOF VALIDATION BENCHMARKS
+        # PROOF VALIDATION
         # =========================================================
 
         if self.validation_mode & PROOF_VALIDATION:
 
             # -----------------------------------------------------
-            # TRANSCRIPT GENERATION
+            # Transcript generation
             # -----------------------------------------------------
 
             benchmark_progress(
@@ -320,15 +289,10 @@ class MainFunctions:
                 )
             )
 
-            Node.transcript_pouw_ratio = (
-                MainFunctions.transcript_per_second
-                / MainFunctions.computations_per_second
-            )
-
             completed_benchmarks += 1
 
             # -----------------------------------------------------
-            # HASH-CHAIN VALIDATION
+            # Hash-chain validation
             # -----------------------------------------------------
 
             benchmark_progress(
@@ -347,40 +311,33 @@ class MainFunctions:
                 )
             )
 
-            Node.hash_validation_pow_ratio = (
-                MainFunctions.hash_validation_per_second
-                / MainFunctions.hashes_per_second
-            )
-
             completed_benchmarks += 1
 
             # -----------------------------------------------------
-            # B&B PROOF VALIDATION
+            # COMPLETE SEMANTIC B&B REPLAY
             # -----------------------------------------------------
 
             benchmark_progress(
                 completed_benchmarks,
                 total_benchmarks,
-                "Benchmarking B&B proof validation..."
+                "Benchmarking Proof semantic replay..."
             )
 
-            MainFunctions.bnb_validation_per_second = (
+            MainFunctions.semantic_validation_per_second = (
                 utils.average_runs(
-                    benchmark.benchmark_bnb_validation,
+                    lambda:
+                        benchmark.benchmark_semantic_validation(
+                            size=self.num_of_cities
+                        ),
                     self.runs
                 )
             )
 
-            Node.bnb_validation_pow_ratio = (
-                MainFunctions.bnb_validation_per_second
-                / MainFunctions.hashes_per_second
-            )
-
             completed_benchmarks += 1
 
-        # ---------------------------------------------------------
+        # =========================================================
         # FINISH
-        # ---------------------------------------------------------
+        # =========================================================
 
         benchmark_progress(
             completed_benchmarks,
@@ -393,6 +350,65 @@ class MainFunctions:
         MainFunctions.benchmarked_validation_mode = (
             self.validation_mode
         )
+
+        # =========================================================
+        # DEBUG
+        # =========================================================
+
+        print(
+            "\n================ BENCHMARK RESULTS ================"
+        )
+
+        print(
+            "PoW:",
+            MainFunctions.hashes_per_second,
+            "hashes/s"
+        )
+
+        print(
+            "PoUW:",
+            MainFunctions.computations_per_second,
+            "B&B nodes/s"
+        )
+
+        if self.validation_mode & COUNCIL_VALIDATION:
+
+            print(
+                "Council initial:",
+                MainFunctions.initial_validations_per_second,
+                "validations/s"
+            )
+
+            print(
+                "Council branch:",
+                MainFunctions.branch_validation_nodes_per_second,
+                "B&B validation nodes/s"
+            )
+
+        if self.validation_mode & PROOF_VALIDATION:
+
+            print(
+                "Proof transcript generation:",
+                MainFunctions.transcript_per_second,
+                "records/s"
+            )
+
+            print(
+                "Proof hash validation:",
+                MainFunctions.hash_validation_per_second,
+                "checks/s"
+            )
+
+            print(
+                "Proof semantic replay:",
+                MainFunctions.semantic_validation_per_second,
+                "records/s"
+            )
+
+        print(
+            "===================================================\n"
+        )
+
     # Create the nodes used by the simulation.
     def create_nodes(self):
         # Generate the TSP problem shared by all nodes.
@@ -934,11 +950,7 @@ class MainFunctions:
                 if node is not finishing_node
             ]
 
-            (
-                proof_valid,
-                proof_computations,
-                proof_time
-            ) = proof_based_validation(
+            proof_result = proof_based_validation(
                 self.node_list[0].tsp,
                 self.node_list[0].tsp.best_path,
                 self.node_list[0].tsp.best_cost,
@@ -948,14 +960,93 @@ class MainFunctions:
                 self.transcript_root
             )
 
-            validation_time += (
-                proof_time
-            )
-
             validation_valid = (
                 validation_valid
-                and proof_valid
+                and proof_result["valid"]
             )
+
+            validation_time += (
+                proof_result["validation_time"]
+            )
+
+            proof_hash_compute_work = (
+                proof_result["hash_checks"]
+                / MainFunctions.hash_validation_per_second
+            )
+
+            proof_semantic_compute_work = (
+                proof_result["semantic_checks"]
+                / MainFunctions.semantic_validation_per_second
+            )
+
+            proof_compute_work = (
+                proof_hash_compute_work
+                + proof_semantic_compute_work
+            )
+
+            validation_compute_work += (
+                proof_compute_work
+            )
+
+            print(
+                "\n================ PROOF VALIDATION DEBUG ================"
+            )
+
+            print(
+                "Proof valid:",
+                proof_result["valid"]
+            )
+
+            print(
+                "Hash checks:",
+                proof_result["hash_checks"]
+            )
+
+            print(
+                "Hash benchmark rate:",
+                MainFunctions.hash_validation_per_second,
+                "checks/s"
+            )
+
+            print(
+                "Hash compute work:",
+                proof_hash_compute_work,
+                "reference s"
+            )
+
+            print(
+                "Semantic checks:",
+                proof_result["semantic_checks"]
+            )
+
+            print(
+                "Semantic benchmark rate:",
+                MainFunctions.semantic_validation_per_second,
+                "records/s"
+            )
+
+            print(
+                "Semantic compute work:",
+                proof_semantic_compute_work,
+                "reference s"
+            )
+
+            print(
+                "Total Proof compute work:",
+                proof_compute_work,
+                "reference s"
+            )
+
+            print(
+                "Proof validation time:",
+                proof_result["validation_time"],
+                "simulated s"
+            )
+
+            print(
+                "========================================================\n"
+            )
+
 
         # ==========================================================
         # COUNCIL VALIDATION

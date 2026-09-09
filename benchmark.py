@@ -177,7 +177,7 @@ def benchmark_branch_validation(duration=2.0, size=0):
 # PoUW transcript benchmark
 # =========================================================
 
-def benchmark_transcript(duration=1.0):
+def benchmark_transcript(duration=2.0):
 
     root_data = {
         "path": [0],
@@ -241,11 +241,9 @@ def benchmark_transcript(duration=1.0):
 # =========================================================
 
 def benchmark_hash_validation(
-    duration=1.0,
+    duration=2.0,
     steps=1000
 ):
-
-    from validation import _hash_slice_worker
 
     root_data = {
         "path": [0],
@@ -330,41 +328,66 @@ def benchmark_hash_validation(
 
     return validation_rate
 
-def benchmark_bnb_validation(duration=1.0):
+def benchmark_semantic_validation(
+    duration=2.0,
+    size=0
+):
 
-    # Create a fixed TSP instance for benchmarking.
-    tsp = TspData(
-        11,
-        benchmark=True
+    print(
+        "\n===== ENTER benchmark_semantic_validation ====="
     )
 
-    root = tsp.tsp_root
+    # Create deterministic TSP instance.
+    benchmark_tsp = TspData(
+        size,
+        True
+    )
 
-    # Find one legal neighbour of the root.
-    neighbour = None
+    root = benchmark_tsp.tsp_root
 
-    for candidate in range(root.size):
+    root_data = {
+        "path": root.path[:],
+        "vertex": root.vertex,
+        "visited": root.visited,
+        "lower_bound": root.cost,
+        "children": []
+    }
 
-        if (
-            root.matrix[
-                root.vertex
-            ][candidate] == utils.inf
-        ):
-            continue
+    root_hash = utils.create_hash(
+        "semantic-validation-benchmark"
+    )
 
-        if candidate in root.path:
-            continue
+    transcript = Transcript(
+        root_data,
+        root_hash
+    )
 
-        neighbour = candidate
-        break
+    # ---------------------------------------------------------
+    # Generate one genuine complete B&B transcript.
+    # This work is OUTSIDE the timed benchmark section.
+    # ---------------------------------------------------------
 
-    if neighbour is None:
+    TspFunction.tsp_solver(
+        benchmark_tsp,
+        None,
+        transcript,
+        0
+    )
+
+    proposed_path = (
+        benchmark_tsp.best_path
+    )
+
+    proposed_cost = (
+        benchmark_tsp.best_cost
+    )
+
+    if proposed_path is None:
         raise RuntimeError(
-            "B&B validation benchmark could not "
-            "find a valid child."
+            "Semantic benchmark failed to produce a TSP solution."
         )
 
-    computations = 0
+    total_checks = 0
 
     start = time.perf_counter()
 
@@ -373,47 +396,25 @@ def benchmark_bnb_validation(duration=1.0):
         < duration
     ):
 
-        # Reconstruct the child exactly as the proof
-        # validator does.
-        child = TspFunction._create_child(
-            root,
-            tsp.matrix,
-            root.vertex,
-            neighbour
-        )
-
-        # Read the original edge cost.
-        edge_cost = tsp.matrix[
-            root.vertex
-        ][neighbour]
-
-        # Read the reduced edge cost.
-        reduced_edge_cost = root.matrix[
-            root.vertex
-        ][neighbour]
-
-        # Recalculate the reduction component.
-        reduction_cost = (
-            child.cost
-            - root.cost
-            - reduced_edge_cost
-        )
-
-        # Perform representative validation comparisons.
-        valid = (
-            child.path
-            == root.path + [neighbour]
-            and edge_cost != utils.inf
-            and reduction_cost >= 0
+        (
+            valid,
+            checks,
+            _,
+            _
+        ) = validation._validate_transcript_semantics(
+            benchmark_tsp,
+            transcript,
+            proposed_path,
+            proposed_cost
         )
 
         if not valid:
+
             raise RuntimeError(
-                "B&B validation benchmark "
-                "generated an invalid child."
+                "Semantic validation benchmark failed."
             )
 
-        computations += 1
+        total_checks += checks
 
     elapsed = (
         time.perf_counter()
@@ -423,12 +424,29 @@ def benchmark_bnb_validation(duration=1.0):
     if elapsed <= 0:
         return 0.0
 
-    return (
-        computations / elapsed
+    rate = (
+        total_checks
+        / elapsed
     )
 
-if __name__ == "__main__":
-    print("0.5:", benchmark_tsp_pouw(0.5, 12))
-    print("1.0:", benchmark_tsp_pouw(1.0, 12))
-    print("2.0:", benchmark_tsp_pouw(2.0, 12))
-    print("5.0:", benchmark_tsp_pouw(5.0, 12))
+    print(
+        "Semantic validation checks:",
+        total_checks
+    )
+
+    print(
+        "Semantic validation elapsed:",
+        elapsed
+    )
+
+    print(
+        "Semantic validation rate:",
+        rate,
+        "records/s"
+    )
+
+    print(
+        "===== EXIT benchmark_semantic_validation =====\n"
+    )
+
+    return rate

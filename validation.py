@@ -492,43 +492,52 @@ def proof_based_validation(
 
     print("Proof based validation")
 
+    empty_result = {
+        "valid": False,
+        "hash_checks": 0,
+        "semantic_checks": 0,
+        "hash_time": 0.0,
+        "semantic_time": 0.0,
+        "validation_time": 0.0
+    }
+
     if transcript is None:
-        return False, 0, 0.0
+        return empty_result
 
     if not validators:
-        return False, 0, 0.0
+        return empty_result
 
-    # ---------------------------------------------------------
-    # 1. HAMILTONIAN CYCLE VALIDATION
-    # ---------------------------------------------------------
+    # =========================================================
+    # 1. HAMILTONIAN CYCLE
+    # =========================================================
 
     if not _validate_hamiltonian_cycle(
         tsp,
         path
     ):
-        return False, 0, 0.0
 
-    # ---------------------------------------------------------
-    # 2. AUTHENTICATED ROOT VALIDATION
-    # ---------------------------------------------------------
+        return empty_result
 
-    root_valid = _validate_transcript_root(
+    # =========================================================
+    # 2. AUTHENTICATED ROOT
+    # =========================================================
+
+    if not _validate_transcript_root(
         tsp,
         transcript,
         transcript_sigma,
         transcript_root
-    )
+    ):
 
-    if not root_valid:
-        return False, 0, 0.0
+        return empty_result
 
-    # ---------------------------------------------------------
-    # 3. HASH-CHAIN VALIDATION
-    # ---------------------------------------------------------
+    # =========================================================
+    # 3. HASH CHAIN
+    # =========================================================
 
     (
         hash_valid,
-        hash_computations,
+        hash_checks,
         hash_time
     ) = _parallel_hash_validation(
         transcript,
@@ -537,230 +546,151 @@ def proof_based_validation(
     )
 
     if not hash_valid:
-        return (
-            False,
-            hash_computations,
+
+        result = empty_result.copy()
+
+        result["hash_checks"] = (
+            hash_checks
+        )
+
+        result["hash_time"] = (
             hash_time
         )
 
-    # ---------------------------------------------------------
-    # 4. FULL TRANSCRIPT SEMANTIC VALIDATION
-    # ---------------------------------------------------------
+        result["validation_time"] = (
+            hash_time
+        )
+
+        return result
+
+    # =========================================================
+    # 4. COMPLETE B&B REPLAY
+    # =========================================================
 
     (
         semantic_valid,
-        semantic_computations
+        semantic_checks,
+        reconstructed_path,
+        reconstructed_cost
     ) = _validate_transcript_semantics(
         tsp,
-        transcript
+        transcript,
+        path,
+        proposed_cost
     )
 
     if not semantic_valid:
-        return (
-            False,
-            hash_computations
-            + semantic_computations,
-            hash_time
+
+        return {
+            "valid": False,
+            "hash_checks": hash_checks,
+            "semantic_checks": semantic_checks,
+            "hash_time": hash_time,
+            "semantic_time": 0.0,
+            "validation_time": hash_time
+        }
+
+    # ---------------------------------------------------------
+    # Semantic replay is sequential because incumbent history
+    # and the open frontier depend on preceding events.
+    # ---------------------------------------------------------
+
+    semantic_validator = validators[0]
+
+    if (
+        semantic_validator.semantic_validation_rate
+        <= 0
+    ):
+
+        raise RuntimeError(
+            "Proof semantic validation rate must be positive."
         )
 
-    # ---------------------------------------------------------
-    # 5. WINNING B&B PATH VALIDATION
-    # ---------------------------------------------------------
-
-    (
-        bnb_valid,
-        bnb_computations,
-        bnb_time
-    ) = _validate_bnb_path(
-        tsp,
-        path,
-        proposed_cost,
-        transcript,
-        validators
-    )
-
-    print("Done with bnb path")
-
-    total_computations = (
-        hash_computations
-        + semantic_computations
-        + bnb_computations
+    semantic_time = (
+        semantic_checks
+        / semantic_validator.semantic_validation_rate
     )
 
     total_time = (
         hash_time
-        + bnb_time
+        + semantic_time
     )
 
-    if not bnb_valid:
-        return (
-            False,
-            total_computations,
-            total_time
-        )
-
-    print("Done with proof validation")
-
-    return (
-        True,
-        total_computations,
-        total_time
-    )
+    return {
+        "valid": True,
+        "hash_checks": hash_checks,
+        "semantic_checks": semantic_checks,
+        "hash_time": hash_time,
+        "semantic_time": semantic_time,
+        "validation_time": total_time
+    }
 
 def _validate_transcript_semantics(
     tsp,
-    transcript
+    transcript,
+    proposed_path,
+    proposed_cost
 ):
 
-    print("Validating transcript semantics")
+    print("Validating complete B&B transcript")
+
+    if transcript is None:
+        return False, 0, None, utils.inf
 
     computations = 0
 
     expected_incumbent = utils.inf
+    expected_best_path = None
 
-    # Every reconstructed B&B node is stored by its path.
-    known_nodes = {
+    # ---------------------------------------------------------
+    # OPEN SEARCH FRONTIER
+    #
+    # Every node placed here MUST eventually be:
+    #
+    # - expanded
+    # - pop-time pruned
+    # - completed
+    # - or identified as a dead end
+    #
+    # Otherwise the transcript is incomplete.
+    # ---------------------------------------------------------
+
+    open_nodes = {
         tuple(tsp.tsp_root.path):
-        tsp.tsp_root
+            tsp.tsp_root
     }
 
-    for step in transcript.steps:
+    steps = transcript.steps
+    index = 0
 
-        computations += 1
+    def fail():
+        return (
+            False,
+            computations,
+            None,
+            utils.inf
+        )
 
-        data = step["data"]
+    # =========================================================
+    # PROCESS COMPLETE TRANSCRIPT
+    # =========================================================
+
+    while index < len(steps):
+
+        data = steps[index]["data"]
 
         step_type = data.get("type")
 
-        # =====================================================
-        # BRANCH EXPANSION
-        # =====================================================
+        # -----------------------------------------------------
+        # Determine which popped B&B node this transcript
+        # record refers to.
+        # -----------------------------------------------------
 
         if step_type == "branch":
 
-            parent_path = tuple(
+            node_path = tuple(
                 data["parent_path"]
             )
-
-            parent_node = known_nodes.get(
-                parent_path
-            )
-
-            # Claimed parent must originate from a previously
-            # reconstructed legitimate B&B node.
-            if parent_node is None:
-                return False, computations
-
-            if (
-                data["parent_vertex"]
-                != parent_node.vertex
-            ):
-                return False, computations
-
-            if (
-                data["parent_lower_bound"]
-                != parent_node.cost
-            ):
-                return False, computations
-
-            destination = (
-                data["selected_neighbour"]
-            )
-
-            if (
-                destination < 0
-                or destination >= tsp.size
-            ):
-                return False, computations
-
-            if destination in parent_node.path:
-                return False, computations
-
-            reduced_edge_cost = (
-                parent_node.matrix[
-                    parent_node.vertex
-                ][destination]
-            )
-
-            if reduced_edge_cost == utils.inf:
-                return False, computations
-
-            expected_edge_cost = (
-                tsp.matrix[
-                    parent_node.vertex
-                ][destination]
-            )
-
-            if expected_edge_cost == utils.inf:
-                return False, computations
-
-            # Independently reconstruct the claimed child.
-            expected_child = (
-                TspFunction._create_child(
-                    parent_node,
-                    tsp.matrix,
-                    parent_node.vertex,
-                    destination
-                )
-            )
-
-            expected_reduction_cost = (
-                expected_child.cost
-                - parent_node.cost
-                - reduced_edge_cost
-            )
-
-            if (
-                data["child_path"]
-                != expected_child.path
-            ):
-                return False, computations
-
-            if (
-                data["edge_cost"]
-                != expected_edge_cost
-            ):
-                return False, computations
-
-            if (
-                data["reduction_cost"]
-                != expected_reduction_cost
-            ):
-                return False, computations
-
-            if (
-                data["child_lower_bound"]
-                != expected_child.cost
-            ):
-                return False, computations
-
-            if (
-                data["incumbent_cost"]
-                != expected_incumbent
-            ):
-                return False, computations
-
-            expected_pruned = (
-                expected_child.cost
-                >= expected_incumbent
-            )
-
-            if (
-                data["pruned"]
-                != expected_pruned
-            ):
-                return False, computations
-
-            # Only nodes that survived generation-time pruning
-            # may later appear as parents.
-            if not expected_pruned:
-                known_nodes[
-                    tuple(expected_child.path)
-                ] = expected_child
-
-        # =====================================================
-        # POP-TIME PRUNE
-        # =====================================================
 
         elif step_type == "prune":
 
@@ -768,40 +698,345 @@ def _validate_transcript_semantics(
                 data["path"]
             )
 
-            node = known_nodes.get(
-                node_path
+        elif step_type == "complete":
+
+            node_path = tuple(
+                data["parent_path"]
             )
 
-            if node is None:
-                return False, computations
+        elif step_type == "dead_end":
 
-            if data["vertex"] != node.vertex:
-                return False, computations
+            node_path = tuple(
+                data["path"]
+            )
+
+        else:
+
+            return fail()
+
+        current_node = open_nodes.get(
+            node_path
+        )
+
+        # The node must actually exist in the verifier's
+        # independently reconstructed frontier.
+        if current_node is None:
+
+            return fail()
+
+        # =====================================================
+        # VERIFY B&B PRIORITY-QUEUE ORDER
+        # =====================================================
+        #
+        # The real solver always pops a node having the
+        # smallest lower bound currently present in the queue.
+        #
+        # Equal lower bounds may be processed in either order.
+
+        minimum_lower_bound = min(
+            node.cost
+            for node in open_nodes.values()
+        )
+
+        if (
+            current_node.cost
+            != minimum_lower_bound
+        ):
+
+            return fail()
+
+        # =====================================================
+        # EXPANSION
+        # =====================================================
+
+        if step_type == "branch":
+
+            # The solver would have pop-time pruned this node
+            # before expansion.
+            if (
+                current_node.cost
+                >= expected_incumbent
+            ):
+
+                return fail()
+
+            # A complete node must be handled by the
+            # complete/dead-end case instead.
+            if (
+                current_node.visited
+                == tsp.size - 1
+            ):
+
+                return fail()
+
+            # -------------------------------------------------
+            # Independently determine EVERY legal child.
+            # -------------------------------------------------
+
+            expected_destinations = []
+
+            for destination in range(
+                current_node.size
+            ):
+
+                if (
+                    current_node.matrix[
+                        current_node.vertex
+                    ][destination]
+                    == utils.inf
+                ):
+
+                    continue
+
+                if (
+                    destination
+                    in current_node.path
+                ):
+
+                    continue
+
+                expected_destinations.append(
+                    destination
+                )
+
+            # A node without children should have produced
+            # a dead_end event.
+            if not expected_destinations:
+
+                return fail()
+
+            # The parent is now being processed.
+            del open_nodes[node_path]
+
+            # -------------------------------------------------
+            # Require EXACTLY one authenticated branch record
+            # for EVERY legal child.
+            #
+            # The real solver iterates destinations in
+            # ascending integer order, so we verify that order.
+            # -------------------------------------------------
+
+            for destination in expected_destinations:
+
+                if index >= len(steps):
+
+                    return fail()
+
+                branch_data = (
+                    steps[index]["data"]
+                )
+
+                computations += 1
+
+                if (
+                    branch_data.get("type")
+                    != "branch"
+                ):
+
+                    return fail()
+
+                if (
+                    tuple(
+                        branch_data[
+                            "parent_path"
+                        ]
+                    )
+                    != node_path
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "parent_vertex"
+                    ]
+                    != current_node.vertex
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "parent_lower_bound"
+                    ]
+                    != current_node.cost
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "selected_neighbour"
+                    ]
+                    != destination
+                ):
+
+                    return fail()
+
+                # ---------------------------------------------
+                # Reconstruct the B&B child independently.
+                # ---------------------------------------------
+
+                reduced_edge_cost = (
+                    current_node.matrix[
+                        current_node.vertex
+                    ][destination]
+                )
+
+                expected_edge_cost = (
+                    tsp.matrix[
+                        current_node.vertex
+                    ][destination]
+                )
+
+                if (
+                    expected_edge_cost
+                    == utils.inf
+                ):
+
+                    return fail()
+
+                expected_child = (
+                    TspFunction._create_child(
+                        current_node,
+                        tsp.matrix,
+                        current_node.vertex,
+                        destination
+                    )
+                )
+
+                expected_reduction_cost = (
+                    expected_child.cost
+                    - current_node.cost
+                    - reduced_edge_cost
+                )
+
+                # ---------------------------------------------
+                # Verify every recorded value.
+                # ---------------------------------------------
+
+                if (
+                    branch_data[
+                        "child_path"
+                    ]
+                    != expected_child.path
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "edge_cost"
+                    ]
+                    != expected_edge_cost
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "reduction_cost"
+                    ]
+                    != expected_reduction_cost
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "child_lower_bound"
+                    ]
+                    != expected_child.cost
+                ):
+
+                    return fail()
+
+                if (
+                    branch_data[
+                        "incumbent_cost"
+                    ]
+                    != expected_incumbent
+                ):
+
+                    return fail()
+
+                expected_pruned = (
+                    expected_child.cost
+                    >= expected_incumbent
+                )
+
+                if (
+                    branch_data["pruned"]
+                    != expected_pruned
+                ):
+
+                    return fail()
+
+                # ---------------------------------------------
+                # Only unpruned children enter the verifier's
+                # open frontier.
+                # ---------------------------------------------
+
+                if not expected_pruned:
+
+                    child_key = tuple(
+                        expected_child.path
+                    )
+
+                    if child_key in open_nodes:
+
+                        return fail()
+
+                    open_nodes[
+                        child_key
+                    ] = expected_child
+
+                index += 1
+
+            # We already advanced index through the complete
+            # branch group.
+            continue
+
+        # =====================================================
+        # POP-TIME PRUNE
+        # =====================================================
+
+        elif step_type == "prune":
+
+            computations += 1
+
+            if (
+                data["vertex"]
+                != current_node.vertex
+            ):
+
+                return fail()
 
             if (
                 data["lower_bound"]
-                != node.cost
+                != current_node.cost
             ):
-                return False, computations
 
-            # This is exactly the solver condition:
-            #
-            # current_node.cost >= tsp.best_cost
-            #
-            # The claimed incumbent must match the value
-            # independently reconstructed by the validator.
+                return fail()
+
             if (
                 data["incumbent_cost"]
                 != expected_incumbent
             ):
-                return False, computations
 
-            # This is the actual B&B pop-time pruning rule.
+                return fail()
+
+            # Exact solver pruning condition.
             if (
-                node.cost
+                current_node.cost
                 < expected_incumbent
             ):
-                return False, computations
+
+                return fail()
+
+            del open_nodes[node_path]
+
+            index += 1
 
         # =====================================================
         # COMPLETE TOUR
@@ -809,98 +1044,291 @@ def _validate_transcript_semantics(
 
         elif step_type == "complete":
 
-            parent_path = tuple(
-                data["parent_path"]
-            )
+            computations += 1
 
-            parent_node = known_nodes.get(
-                parent_path
-            )
-
-            if parent_node is None:
-                return False, computations
-
-            # A completed tour may only occur after every city
-            # has already been visited.
+            # Otherwise it would have been pop-time pruned.
             if (
-                parent_node.visited
+                current_node.cost
+                >= expected_incumbent
+            ):
+
+                return fail()
+
+            if (
+                current_node.visited
                 != tsp.size - 1
             ):
-                return False, computations
+
+                return fail()
 
             if (
                 data["parent_vertex"]
-                != parent_node.vertex
+                != current_node.vertex
             ):
-                return False, computations
+
+                return fail()
 
             if (
                 data["parent_lower_bound"]
-                != parent_node.cost
+                != current_node.cost
             ):
-                return False, computations
+
+                return fail()
 
             if (
                 data["selected_neighbour"]
                 != 0
             ):
-                return False, computations
 
-            expected_edge_cost = (
+                return fail()
+
+            final_edge = (
                 tsp.matrix[
-                    parent_node.vertex
+                    current_node.vertex
                 ][0]
             )
 
-            if expected_edge_cost == utils.inf:
-                return False, computations
+            if final_edge == utils.inf:
+
+                return fail()
 
             if (
                 data["edge_cost"]
-                != expected_edge_cost
+                != final_edge
             ):
-                return False, computations
+
+                return fail()
+
+            expected_path = (
+                current_node.path
+                + [0]
+            )
 
             if (
                 data["child_path"]
-                != parent_node.path + [0]
+                != expected_path
             ):
-                return False, computations
 
-            if data["reduction_cost"] is not None:
-                return False, computations
+                return fail()
 
-            if data["child_lower_bound"] is not None:
-                return False, computations
+            if (
+                data["reduction_cost"]
+                is not None
+            ):
+
+                return fail()
+
+            if (
+                data["child_lower_bound"]
+                is not None
+            ):
+
+                return fail()
 
             if data["pruned"]:
-                return False, computations
 
-            # The incumbent stored in the transcript must be
-            # the incumbent that existed BEFORE this tour was found.
+                return fail()
+
             if (
                 data["incumbent_cost"]
                 != expected_incumbent
             ):
-                return False, computations
 
-            # Independently calculate the actual total cost
-            # of the completed tour.
+                return fail()
+
             completed_cost = (
-                parent_node.total_cost
-                + expected_edge_cost
+                current_node.total_cost
+                + final_edge
             )
 
-            # If this tour is better, it becomes the new
-            # independently reconstructed incumbent.
-            if completed_cost < expected_incumbent:
-                expected_incumbent = completed_cost
-        else:
+            del open_nodes[node_path]
 
-            # Unknown transcript record.
-            return False, computations
+            # ---------------------------------------------
+            # Independently reconstruct incumbent history.
+            # ---------------------------------------------
 
-    return True, computations
+            if (
+                completed_cost
+                < expected_incumbent
+            ):
+
+                expected_incumbent = (
+                    completed_cost
+                )
+
+                expected_best_path = (
+                    expected_path
+                )
+
+            index += 1
+
+        # =====================================================
+        # DEAD END
+        # =====================================================
+
+        elif step_type == "dead_end":
+
+            computations += 1
+
+            # Otherwise solver would have produced prune.
+            if (
+                current_node.cost
+                >= expected_incumbent
+            ):
+
+                return fail()
+
+            if (
+                data["vertex"]
+                != current_node.vertex
+            ):
+
+                return fail()
+
+            if (
+                data["lower_bound"]
+                != current_node.cost
+            ):
+
+                return fail()
+
+            if (
+                data["incumbent_cost"]
+                != expected_incumbent
+            ):
+
+                return fail()
+
+            # ---------------------------------------------
+            # Complete path but no return edge.
+            # ---------------------------------------------
+
+            if (
+                current_node.visited
+                == tsp.size - 1
+            ):
+
+                final_edge = (
+                    tsp.matrix[
+                        current_node.vertex
+                    ][0]
+                )
+
+                if final_edge != utils.inf:
+
+                    return fail()
+
+                if (
+                    data.get("reason")
+                    != "no_return_edge"
+                ):
+
+                    return fail()
+
+            # ---------------------------------------------
+            # Non-complete node with no legal children.
+            # ---------------------------------------------
+
+            else:
+
+                legal_children = []
+
+                for destination in range(
+                    current_node.size
+                ):
+
+                    if (
+                        current_node.matrix[
+                            current_node.vertex
+                        ][destination]
+                        == utils.inf
+                    ):
+
+                        continue
+
+                    if (
+                        destination
+                        in current_node.path
+                    ):
+
+                        continue
+
+                    legal_children.append(
+                        destination
+                    )
+
+                if legal_children:
+
+                    return fail()
+
+                if (
+                    data.get("reason")
+                    != "no_children"
+                ):
+
+                    return fail()
+
+            del open_nodes[node_path]
+
+            index += 1
+
+    # =========================================================
+    # SEARCH COMPLETENESS
+    # =========================================================
+
+    # No generated B&B node may simply disappear from the
+    # transcript.
+    if open_nodes:
+
+        print(
+            "Proof failed: unprocessed B&B nodes:",
+            list(open_nodes.keys())
+        )
+
+        return fail()
+
+    # =========================================================
+    # FINAL INCUMBENT MUST BE THE PROPOSED SOLUTION
+    # =========================================================
+
+    if expected_best_path is None:
+
+        return fail()
+
+    if (
+        expected_incumbent
+        != proposed_cost
+    ):
+
+        return fail()
+
+    if (
+        expected_best_path
+        != proposed_path
+    ):
+
+        return fail()
+
+    print(
+        "Complete B&B replay valid."
+    )
+
+    print(
+        "Reconstructed best path:",
+        expected_best_path
+    )
+
+    print(
+        "Reconstructed best cost:",
+        expected_incumbent
+    )
+
+    return (
+        True,
+        computations,
+        expected_best_path,
+        expected_incumbent
+    )
 
 def _parallel_hash_validation(
     transcript,
@@ -1246,243 +1674,6 @@ def _hash_slice_worker(args):
         True,
         computations,
         None
-    )
-
-def _validate_bnb_path(
-    tsp,
-    path,
-    proposed_cost,
-    transcript,
-    validators
-):
-
-    print("Validating bnb path")
-
-    if not path:
-        return False, 0, 0.0
-
-    if transcript is None:
-        return False, 0, 0.0
-
-    if not validators:
-        return False, 0, 0.0
-
-    current_node = tsp.tsp_root
-
-    computations = 0
-    calculated_cost = 0
-
-    for i in range(len(path) - 1):
-
-        source = path[i]
-        destination = path[i + 1]
-
-        computations += 1
-
-        if (
-            current_node.path
-            != path[:i + 1]
-        ):
-            return False, computations, 0.0
-
-        if current_node.vertex != source:
-            return False, computations, 0.0
-
-        # =====================================================
-        # FINAL RETURN TO CITY 0
-        # =====================================================
-
-        if i == len(path) - 2:
-
-            if (
-                current_node.visited
-                != tsp.size - 1
-            ):
-                return False, computations, 0.0
-
-            if destination != 0:
-                return False, computations, 0.0
-
-            final_edge = tsp.matrix[
-                source
-            ][0]
-
-            if final_edge == utils.inf:
-                return False, computations, 0.0
-
-            calculated_cost += final_edge
-
-            key = (
-                tuple(current_node.path),
-                0
-            )
-
-            data = transcript.path_index.get(
-                key
-            )
-
-            if data is None:
-                return False, computations, 0.0
-
-            if data.get("type") != "complete":
-                return False, computations, 0.0
-
-            if (
-                data["parent_path"]
-                != current_node.path
-            ):
-                return False, computations, 0.0
-
-            if (
-                data["parent_vertex"]
-                != current_node.vertex
-            ):
-                return False, computations, 0.0
-
-            if (
-                data["parent_lower_bound"]
-                != current_node.cost
-            ):
-                return False, computations, 0.0
-
-            if (
-                data["child_path"]
-                != current_node.path + [0]
-            ):
-                return False, computations, 0.0
-
-            if (
-                data["edge_cost"]
-                != final_edge
-            ):
-                return False, computations, 0.0
-
-            continue
-
-        # =====================================================
-        # NORMAL B&B TRANSITION
-        # =====================================================
-
-        if destination in current_node.path:
-            return False, computations, 0.0
-
-        reduced_edge_cost = (
-            current_node.matrix[
-                source
-            ][destination]
-        )
-
-        if reduced_edge_cost == utils.inf:
-            return False, computations, 0.0
-
-        edge_cost = tsp.matrix[
-            source
-        ][destination]
-
-        if edge_cost == utils.inf:
-            return False, computations, 0.0
-
-        calculated_cost += edge_cost
-
-        expected_child = (
-            TspFunction._create_child(
-                current_node,
-                tsp.matrix,
-                source,
-                destination
-            )
-        )
-
-        expected_reduction_cost = (
-            expected_child.cost
-            - current_node.cost
-            - reduced_edge_cost
-        )
-
-        key = (
-            tuple(current_node.path),
-            destination
-        )
-
-        data = transcript.path_index.get(
-            key
-        )
-
-        if data is None:
-            return False, computations, 0.0
-
-        if data.get("type") != "branch":
-            return False, computations, 0.0
-
-        if (
-            data["parent_path"]
-            != current_node.path
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["parent_vertex"]
-            != current_node.vertex
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["parent_lower_bound"]
-            != current_node.cost
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["selected_neighbour"]
-            != destination
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["child_path"]
-            != expected_child.path
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["edge_cost"]
-            != edge_cost
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["reduction_cost"]
-            != expected_reduction_cost
-        ):
-            return False, computations, 0.0
-
-        if (
-            data["child_lower_bound"]
-            != expected_child.cost
-        ):
-            return False, computations, 0.0
-
-        # The winning branch cannot have been pruned.
-        if data["pruned"]:
-            return False, computations, 0.0
-
-        current_node = expected_child
-
-    if calculated_cost != proposed_cost:
-        return False, computations, 0.0
-
-    if validators[0].bnb_validation_rate > 0:
-        validation_time = (
-            computations
-            / validators[0].bnb_validation_rate
-        )
-    else:
-        validation_time = 0.0
-
-    return (
-        True,
-        computations,
-        validation_time
     )
 
 def _validate_hamiltonian_cycle(tsp, path):

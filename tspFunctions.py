@@ -409,6 +409,31 @@ class TspFunction():
                 # No valid Hamiltonian cycle exists through this
                 # node if the return edge is unavailable.
                 if final_edge == utils.inf:
+
+                    if transcript is not None:
+
+                        data = transcript.create_dead_end_data(
+                            path=current_node.path,
+                            vertex=current_node.vertex,
+                            lower_bound=current_node.cost,
+                            incumbent_cost=tsp.best_cost,
+                            reason="no_return_edge"
+                        )
+
+                        transcript.add_step(data)
+
+                        if transcript_ratio > 0:
+
+                            work += 1 / transcript_ratio
+
+                            time += (
+                                1
+                                / (
+                                    transcript_ratio
+                                    * search_rate
+                                )
+                            )
+
                     continue
 
                 total_cost = (

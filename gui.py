@@ -1,12 +1,36 @@
 """Tkinter interface for configuring experiments and displaying work and time results."""
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mainFunctions import MainFunctions
 import time
 import threading
+from hostRuntime import cancellation, SimulationCancelled
+
+host_workers = None
+benchmark_runs = None
+experiment_seed = None
+cancel_event = threading.Event()
+active_thread = None
+closing = False
+
+
+def close_application():
+    """Cancel active work and let its pool cleanup finish before destroying Tk."""
+    global closing
+    closing = True
+    cancel_event.set()
+    root.withdraw()
+
+    def finish_close():
+        if active_thread is not None and active_thread.is_alive():
+            root.after(50, finish_close)
+        else:
+            root.destroy()
+
+    finish_close()
 
 NO_VALIDATION = 0
 PROOF_VALIDATION = 1
@@ -47,12 +71,23 @@ pouw_compute_work_label = None
 def run_settings():
     """Read GUI settings on the Tkinter thread and start the background experiment."""
 
+    global active_thread
     # Read Tkinter values before launching the worker thread.
     selected_nodes = nodes.get()
     selected_cities = cities.get()
     selected_runs = runs.get()
     selected_difficulty = difficulty.get()
     selected_validation = validation.get()
+    try:
+        selected_host_workers = int(host_workers.get())
+        selected_benchmark_runs = int(benchmark_runs.get())
+        selected_seed = int(experiment_seed.get())
+        if selected_host_workers < 1 or selected_benchmark_runs < 1:
+            raise ValueError()
+    except (ValueError, tk.TclError):
+        messagebox.showerror("Invalid settings", "Workers and benchmark repetitions must be positive integers; seed must be an integer.")
+        return
+    cancel_event.clear()
     if selected_validation == "none":
         validation_mode = NO_VALIDATION
     elif selected_validation == "proof":
@@ -82,14 +117,19 @@ def run_settings():
             selected_runs,
             selected_difficulty,
             validation_mode,
+            selected_host_workers,
+            selected_benchmark_runs,
+            selected_seed,
         ),
         daemon=True,
     )
+    active_thread = worker_thread
     root.after(1200, worker_thread.start)
 
 
 def run_simulation_worker(
-    selected_nodes, selected_cities, selected_runs, selected_difficulty, validation_mode
+    selected_nodes, selected_cities, selected_runs, selected_difficulty, validation_mode,
+    selected_host_workers=1, selected_benchmark_runs=1, selected_seed=20260910,
 ):
     """Run calibration and simulations off the UI thread, then schedule success or
     error display.
@@ -97,15 +137,16 @@ def run_simulation_worker(
     root.after(0, update_loading_progress, 5, "Starting benchmarks... 5 / 100")
     start = time.perf_counter()
     try:
-        main_functions = MainFunctions(
-            selected_nodes,
-            selected_cities,
-            selected_runs,
-            selected_difficulty,
-            validation_mode,
-            benchmark_progress_callback=benchmark_progress,
-        )
-        data = main_functions.run_simulation(progress_callback=simulation_progress)
+        from experiments import make_inputs
+        with cancellation(cancel_event):
+            inputs = make_inputs(selected_seed, selected_runs, selected_cities, selected_nodes)
+            main_functions = MainFunctions(
+                selected_nodes, selected_cities, selected_runs, selected_difficulty,
+                validation_mode, benchmark_progress_callback=benchmark_progress,
+                host_workers=selected_host_workers, benchmark_runs=selected_benchmark_runs,
+                run_inputs=inputs,
+            )
+            data = main_functions.run_simulation(progress_callback=simulation_progress)
         elapsed = time.perf_counter() - start
         with open("timing.txt", "a") as f:
             f.write(f"run_settings total: {elapsed:.3f}s\n")
@@ -144,6 +185,8 @@ def update_loading_progress(percentage, message):
 
 def simulation_finished(data):
     """Store the finished result and switch the interface to the results view."""
+    if closing:
+        return
     progress_bar["value"] = 100
     progress_label.config(text="Simulation complete! 100 / 100")
     run_button.config(state="normal")
@@ -152,9 +195,12 @@ def simulation_finished(data):
 
 def simulation_failed(error):
     """Display a genuine run error and restore controls so the user can try again."""
+    if closing:
+        return
     progress_bar["value"] = 0
     progress_label.config(text="Simulation failed.")
-    print("Simulation error:", error, flush=True)
+    if not isinstance(error, SimulationCancelled):
+        messagebox.showerror("Simulation failed", str(error))
     loading_frame.grid_remove()
     settings_frame.grid(row=0, column=0, sticky="nsew")
     run_button.config(state="normal")
@@ -467,7 +513,7 @@ def show_settings():
     settings_frame.grid(row=0, column=0, sticky="nsew")
 
 
-def start_gui():
+def start_gui(default_host_workers=1):
     """Build the settings, progress, and results widgets, then start the Tkinter event
     loop.
     """
@@ -502,7 +548,9 @@ def start_gui():
     global progress_label
     global pow_compute_work_label
     global pouw_compute_work_label
+    global host_workers, benchmark_runs, experiment_seed
     root = tk.Tk()
+    root.protocol("WM_DELETE_WINDOW", close_application)
     root.title("PoW vs PoUW Simulation")
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
@@ -629,8 +677,21 @@ def start_gui():
         variable=validation,
         value="council",
     ).grid(row=0, column=2, padx=15)
+    controls = ttk.LabelFrame(settings_frame, text="Execution and repeatability", padding=10)
+    controls.grid(row=3, column=0, columnspan=2, sticky="we")
+    host_workers = tk.IntVar(value=default_host_workers)
+    benchmark_runs = tk.IntVar(value=1)
+    experiment_seed = tk.StringVar(value="20260910")
+    for row, (label, variable) in enumerate([
+        ("Real worker processes", host_workers),
+        ("Benchmark repetitions", benchmark_runs),
+        ("Experiment seed", experiment_seed),
+    ]):
+        ttk.Label(controls, text=label).grid(row=row, column=0, sticky="w", padx=5)
+        ttk.Entry(controls, textvariable=variable, width=15).grid(row=row, column=1)
+    ttk.Label(controls, text="Worker limit does not change simulated nodes or impose a CPU percentage cap.", wraplength=420).grid(row=3, column=0, columnspan=2, pady=5)
     run_button = ttk.Button(settings_frame, text="Run", command=run_settings)
-    run_button.grid(row=3, column=0, columnspan=2, pady=(10, 10))
+    run_button.grid(row=4, column=0, columnspan=2, pady=(10, 10))
     loading_frame = ttk.Frame(root, padding=20)
     loading_frame.columnconfigure(0, weight=1)
     loading_frame.rowconfigure(0, weight=1)
@@ -649,6 +710,7 @@ def start_gui():
         length=400,
     )
     progress_bar.grid(row=2, column=0, pady=(0, 10))
+    ttk.Button(loading_content_frame, text="Cancel", command=cancel_event.set).grid(row=3, column=0)
     results_container = ttk.Frame(root)
     results_container.columnconfigure(0, weight=1)
     results_container.rowconfigure(0, weight=1)

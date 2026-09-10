@@ -9,6 +9,7 @@ import validation
 import utils
 import time
 import secrets
+from hostRuntime import check_cancelled
 
 NO_VALIDATION = 0b00
 PROOF_VALIDATION = 0b01
@@ -21,6 +22,7 @@ def benchmark_pow(duration=2.0):
     hashes = 0
     start = time.perf_counter()
     while time.perf_counter() - start < duration:
+        check_cancelled()
         BlockFunctions.create_header_hash(
             benchmark_node.blockData.previous_hash,
             benchmark_node.blockData.timestamp,
@@ -41,6 +43,7 @@ def benchmark_tsp_pouw(duration=2.0, size=0):
     total_computations = 0
     elapsed = 0.0
     while elapsed < duration:
+        check_cancelled()
 
         # Restart a complete workload so an exhausted queue cannot distort throughput.
         benchmark_tsp = TspData(size, True)
@@ -63,6 +66,7 @@ def benchmark_initial_validation(duration=2.0, size=0):
     validations = 0
     start = time.perf_counter()
     while time.perf_counter() - start < duration:
+        check_cancelled()
         valid = validation._validate_node((benchmark_tsp, proposed_path, proposed_cost))
         if not valid:
             raise RuntimeError("Benchmark initial validation failed.")
@@ -82,6 +86,7 @@ def benchmark_branch_validation(duration=2.0, size=0):
     start = time.perf_counter()
     branch_index = 0
     while time.perf_counter() - start < duration:
+        check_cancelled()
         branch = branches[branch_index]
         valid, computations = TspFunction.validate_branch(
             benchmark_tsp, branch, proposed_cost
@@ -94,9 +99,9 @@ def benchmark_branch_validation(duration=2.0, size=0):
     return total_computations / elapsed
 
 
-def _create_proof_benchmark_transcript(size):
+def _create_proof_benchmark_transcript(size, matrix=None):
     """Build a genuine solved instance and transcript for validation calibration."""
-    tsp = TspData(size, True)
+    tsp = TspData(size, True) if matrix is None else TspData(size, matrix=matrix)
     sigma = secrets.token_bytes(32)
     root = tsp.tsp_root
     root_children = []
@@ -146,10 +151,12 @@ def benchmark_transcript(duration=2.0, size=10):
     computations = 0
     start = time.perf_counter()
     while time.perf_counter() - start < duration:
+        check_cancelled()
         benchmark_transcript = Transcript(
             source_transcript.root["data"], transcript_root
         )
         for source_step in source_steps:
+            check_cancelled()
             if time.perf_counter() - start >= duration:
                 break
             data = source_step["data"]
@@ -167,10 +174,11 @@ def benchmark_hash_validation(duration=2.0, size=10):
     total_steps = len(transcript.steps)
     if total_steps == 0:
         return 0.0
-    arguments = (0, transcript.steps, 0, total_steps, transcript_root)
+    arguments = (0, transcript.steps, 0, transcript_root)
     computations = 0
     start = time.perf_counter()
     while time.perf_counter() - start < duration:
+        check_cancelled()
         _, valid, steps_checked, _ = validation._hash_slice_worker(arguments)
         if not valid:
             raise RuntimeError(
@@ -199,6 +207,7 @@ def benchmark_semantic_validation(duration=2.0, size=10):
     total_units = 0
     start = time.perf_counter()
     while time.perf_counter() - start < duration:
+        check_cancelled()
         hamiltonian_valid = validation._validate_proposed_tour(
             tsp, proposed_path, proposed_cost
         )

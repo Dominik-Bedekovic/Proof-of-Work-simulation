@@ -1,6 +1,7 @@
 """Generate symmetric TSP instances and solve or validate them with Branch and Bound."""
 
 from __future__ import annotations
+from hostRuntime import check_cancelled
 
 import heapq
 
@@ -445,6 +446,7 @@ class TspFunction:
         computations = 0
 
         while priority_queue:
+            check_cancelled()
 
             # Expand the currently most promising branch according to the
             # lower-bound ordering implemented by TspNode.__lt__().
@@ -623,6 +625,7 @@ class TspFunction:
             search_rate is None
             or computations < search_rate
         ):
+            check_cancelled()
 
             # No remaining node means this local search frontier is exhausted.
             if not priority_queue:

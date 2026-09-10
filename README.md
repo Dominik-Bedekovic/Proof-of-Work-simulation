@@ -139,4 +139,52 @@ python proof_validation_tests.py
 python -m unittest -v test_regressions
 ```
 
-Sažetak provedene provjere nalazi se u `TEST_RESULTS.md`.
+Svježi dnevnici provjere nalaze se u `test-results/`.
+
+
+## Ograničenje stvarnog izvođenja
+
+`python main.py` koristi jednog stvarnog radnika. Broj simuliranih čvorova ostaje neovisan.
+GUI sadrži **Real worker processes**, **Benchmark repetitions**, **Experiment seed** i **Cancel**.
+Jedan stvarni radnik ne stvara procesni bazen. Pri više radnika koristi se ograničeni spawn bazen;
+mali transkripti (manje od 10 000 zapisa) provjeravaju se izravno. Sve semantičke provjere ostaju uključene.
+
+Na Windowsu je opcionalno dostupan postotni limit za aplikaciju i njezine potomke:
+
+```sh
+python main.py --host-workers 1 --cpu-percent 25
+```
+
+Postotni limit nije temperaturni limit. Windows Job Object kod nije izvršno provjeren na Windowsu
+u ovoj isporuci; ako Windows odbije postavljanje, program prijavljuje pogrešku i ne nastavlja bez limita.
+Bez `--cpu-percent` nema postotnog ograničenja. Linux testovi provjeravaju spawn radnike, ne Windows API.
+Mehanički neispravan ventilator potrebno je popraviti prije zahtjevnih izvođenja.
+
+## Ponovljiva evaluacija
+
+U direktoriju `evaluation/` nalaze se 40 uparenih ulaza, mjerene referentne stope, sirovi rezultati,
+intervali pouzdanosti, grafovi i metapodaci Linux izvođenja. Korištena je PoW težina 4, ne 6.
+Za ponavljanje sa spremljenim ulazima i kalibracijom:
+
+```sh
+python experiments.py --replay evaluation --output ponovljeno --host-workers 1
+```
+
+Za novu kalibraciju i nove rezultate:
+
+```sh
+python experiments.py --output novo-mjerenje --runs 40 --cities 12 --nodes 5 --difficulty 4
+```
+
+Izlazni direktorij mora biti prazan. GUI koristi ponovljive ulaze sa zadanim sjemenom,
+ali za usporedbu svih validacijskih varijanti uz zajedničku kalibraciju koristite `experiments.py`.
+Spremljene stope znače da ponavljanje provjerava isti model referentnog računala, a ne mjeri novo računalo.
+
+Dodatni testovi:
+
+```sh
+python -m unittest -v test_regressions test_host_controls
+```
+
+Potvrđeno: 29 testnih metoda, uključujući 600 iscrpnih TSP usporedbi; zasebna proof skripta daje 10/10
+ očekivanih odluka. Testovi su izvršeni na Linuxu/Pythonu 3.12.14. Izvorni GUI nije pokrenut na Windowsu.

@@ -9,12 +9,14 @@ import utils
 class TspData:
     """A distance matrix and the mutable state of its branch-and-bound search."""
 
-    def __init__(self, size, benchmark=False):
+    def __init__(self, size, benchmark=False, matrix=None):
         """Generate a matrix, reduce its root, and initialize an empty incumbent and
         search queue.
         """
         self.size = size
-        if benchmark:
+        if matrix is not None:
+            self.matrix = [row[:] for row in matrix]
+        elif benchmark:
 
             # A local deterministic generator makes calibration repeatable without reseeding simulations.
             rng = random.Random(12345)

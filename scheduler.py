@@ -4,6 +4,7 @@ import copy
 import heapq
 import math
 from tspFunctions import TspFunction
+from hostRuntime import check_cancelled
 
 
 def run_search(tsp, nodes, transcript=None, transcript_ratio=0.0, on_event=None):
@@ -56,6 +57,7 @@ def run_search(tsp, nodes, transcript=None, transcript_ratio=0.0, on_event=None)
 
     dispatch()
     while events:
+        check_cancelled()
         now = events[0][0]
 
         # Handle existing tied events in worker order before assigning new work.

@@ -427,7 +427,7 @@ class Regressions(unittest.TestCase):
                         for r, h in zip(rates, hashes)
                     ]
 
-            with patch("mainFunctions.multiprocessing.Pool", Pool):
+            with patch("mainFunctions.HostPool", Pool):
                 r = m.multiple_node_pow(1)
             self.assertEqual(r["winner"]["name"], winner)
             self.assertEqual(r["simulation_time"], elapsed)

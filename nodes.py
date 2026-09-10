@@ -40,21 +40,21 @@ class Node:
         """Start the shared transcript from the supplied root data and commitment."""
         cls.transcript = Transcript(root_data, root_hash)
 
-    def __init__(self, name):
+    def __init__(self, name, hash_rate=None, reward=None):
         """Initialize this worker's mining cursor, counters, and calibrated operation
         rates.
         """
         self.name = name
 
         # Worker-specific coinbase data gives each worker a different header search space.
-        self.coinbase = {"reward": utils.random_string(10), "extra_nonce": 0}
+        self.coinbase = {"reward": reward if reward is not None else utils.random_string(10), "extra_nonce": 0}
         self.merkle_root = BlockFunctions.calculate_merkle_root(
             self.blockData.transactions, self.coinbase
         )
         self.nonce = 0
 
         # This is a simulated capability, scaled to other operations using benchmark ratios.
-        self.hash_rate = utils.random_num(100, 1000)
+        self.hash_rate = hash_rate if hash_rate is not None else utils.random_num(100, 1000)
         self.mining_count = 0
         self.search_credit = 0.0
         self.previous_search_credit = 0.0

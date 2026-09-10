@@ -1,6 +1,7 @@
 """Execute PoW batches and maintain nonce state at the simulated stopping time."""
 
 from blockFunctions import BlockFunctions
+from hostRuntime import check_cancelled
 
 
 def pow_worker(args):
@@ -19,6 +20,8 @@ def pow_worker(args):
         transactions,
     ) = args
     for i in range(hash_rate):
+        if i % 256 == 0:
+            check_cancelled()
         header_hash = BlockFunctions.create_header_hash(
             previous_hash, timestamp, merkle_root, nonce
         )

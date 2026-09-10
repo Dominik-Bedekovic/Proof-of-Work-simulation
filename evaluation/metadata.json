@@ -1,0 +1,42 @@
+{
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.39",
+  "cpu_model": "x86_64",
+  "logical_cpus": 9,
+  "affinity": [
+    0,
+    1
+  ],
+  "host_workers": 1,
+  "cpu_percent": null,
+  "difficulty": 4,
+  "seed": 20260910,
+  "replay_of": null,
+  "source_sha256": {
+    "benchmark.py": "817cf48236df2335ccee61e970658a8c0fc4713cbb51b2e683ff72f8c18f917d",
+    "blockData.py": "6f823b46f1ec03c899f1331e085b3cc6c9904a0f977968406e4d2fc7dcd84bde",
+    "blockFunctions.py": "fd9f1bb4bfd6b247b57ae2a70564e6cda3a8a65cfccd0a0221bd853891d425e9",
+    "calibration_sensitivity.py": "9063246877281999ca7c5789ec8184daee446f6fa5cacaf89b3b716d47db1aa1",
+    "calibration_smoke.py": "26672752b16d6b132985c86c2aee25cf771aad28c6e3eef7f2511f1a518a4b75",
+    "experiments.py": "7c846831c639f2da3e72f8e87510d59d97bdb77699cfa39fde995b92e2e68c13",
+    "gui.py": "efd5de7264a49bd36fee9138ade4d32d9f14f2fbef40db15f4226f0dc4e969bf",
+    "hostRuntime.py": "78b9ce33bad1722fcbc5450ed02fdcaba37443290f3f2e368ba60441ca625791",
+    "main.py": "6cd57c9a7519e1ed5c18710e8468cc3a1fb6884643924bd446ab0c54b9af44a2",
+    "mainFunctions.py": "5e6bba5c87ff6ac1d43732aa4f061d8cf0423117b0e09f9bceb7d3a65e23db4f",
+    "nodes.py": "934a23fe4310db1257bfafee40346b520c82dd3b03f89f594e02c0488824fcfa",
+    "powWorker.py": "3f6ab8f9ef74436f6de4089b1ab35371d292f51a7b8a153a7a1df1bbe8387c76",
+    "proof_validation_tests.py": "f9bac06dd821eeec83621b758bfb51fc7358a8cbe8107a281fc0c4d5c91154c6",
+    "scheduler.py": "2fa77a42b34e7f850592fa4bcfbf7578fd4c183e7ff71280860148862aaf2f02",
+    "test_host_controls.py": "a778f6d7ee9e59656f408d939e8de9d99ce928932b4ad3a867044aab71143db8",
+    "test_regressions.py": "25cbee426906f6180732662eacc93d2a29909d21ebb16a19fea380d77c5a30bf",
+    "transcript.py": "993aa316192ef5a28cbb2b6c70ddc714450e8838365c8523f77f91ba33b682ba",
+    "tspData.py": "dc60432db9f9199fe6a76aae0ff25240ba738f68f39b0aeeac85f186521ec54c",
+    "tspFunctions.py": "a0e9624ea94fd7506b38f84d9ff3cf366560f8abd6e5f43e5d1308cbc5e74528",
+    "tspNode.py": "f833330e82004576723de4737c80d5c3a11422addfee38c9925988142dfab707",
+    "utils.py": "7e2b3301f58bce48f93673159f752159b2726788e1491fe7faa31c1a40c42b1c",
+    "validation.py": "0f7d4b555dabd203b3861d90cb09367e1cdde671580cdd48d63ed5fe852a6b58",
+    "windowsCpuLimit.py": "b3f00e390df1578c4e995bd561f2eb534abca173f1fecf65ba44e446ebf43862"
+  },
+  "benchmark_duration_target": 2.0,
+  "benchmark_repetitions": 1
+}

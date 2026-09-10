@@ -2,7 +2,7 @@
 
 from tspData import TspData
 from tspFunctions import TspFunction
-import multiprocessing
+from hostRuntime import host_map, check_cancelled
 import utils
 import math
 from numbers import Real
@@ -15,6 +15,7 @@ def council_validation(
     proposed_cost,
     initial_validations_per_second,
     branch_validation_nodes_per_second,
+    host_workers=1,
 ):
     """Check the tour and partition the search across validators; require unanimous
     approval.
@@ -22,8 +23,7 @@ def council_validation(
 
     # Each council member first checks the complete submitted tour.
     arguments = [(tsp, proposed_path, proposed_cost) for _ in council]
-    with multiprocessing.Pool() as pool:
-        results = pool.map(_validate_node, arguments)
+    results = host_map(_validate_node, arguments, host_workers)
     initial_votes = sum(results)
     initial_validations = len(council)
     if initial_validations == 0:
@@ -54,7 +54,7 @@ def council_validation(
         ultimate_voters,
         branch_validation_nodes,
         ultimate_validation_time,
-    ) = _parallel_branch_validation(tsp, council, proposed_cost)
+    ) = _parallel_branch_validation(tsp, council, proposed_cost, host_workers)
     branch_compute_work = branch_validation_nodes / branch_validation_nodes_per_second
     council_compute_work = initial_compute_work + branch_compute_work
     total_validation_time = initial_validation_time + ultimate_validation_time
@@ -79,36 +79,22 @@ def _validate_node(args):
     return _validate_proposed_tour(tsp, proposed_path, proposed_cost)
 
 
-def _parallel_branch_validation(tsp, council, proposed_cost):
+def _parallel_branch_validation(tsp, council, proposed_cost, host_workers=1):
     """Assign disjoint initial branches and aggregate votes, node counts, and slowest
     time.
     """
     branches = TspFunction.create_initial_branches(tsp)
-    processes = []
-    result_queue = multiprocessing.Queue()
     num_validators = len(council)
+    if not num_validators:
+        return (0, 0, 0, 0.0)
 
     # Branches are disjoint, not replicated votes on the same search work.
     branch_slices = [branches[i::num_validators] for i in range(num_validators)]
-    for node_index, branch_slice in enumerate(branch_slices):
-        process = multiprocessing.Process(
-            target=_branch_worker,
-            args=(
-                node_index,
-                council[node_index].branch_validation_rate,
-                tsp,
-                branch_slice,
-                result_queue,
-                proposed_cost,
-            ),
-        )
-        processes.append(process)
-        process.start()
-    for process in processes:
-        process.join()
-    results = []
-    for _ in processes:
-        results.append(result_queue.get())
+    arguments = [
+        (index, council[index].branch_validation_rate, tsp, branches, proposed_cost)
+        for index, branches in enumerate(branch_slices)
+    ]
+    results = host_map(_branch_worker, arguments, host_workers)
     ultimate_votes = 0
     ultimate_voters = 0
     ultimate_computations = 0
@@ -134,22 +120,20 @@ def _parallel_branch_validation(tsp, council, proposed_cost):
     )
 
 
-def _branch_worker(
-    node_index, branch_validation_rate, tsp, branches, result_queue, proposed_cost
-):
-    """Search all assigned branches and send one aggregate result to the parent
-    process.
-    """
+def _branch_worker(args):
+    """Return one logical validator's result; worker exceptions propagate to the caller."""
+    node_index, branch_validation_rate, tsp, branches, proposed_cost = args
     valid = True
     computations = 0
     for branch in branches:
+        check_cancelled()
         branch_valid, branch_computations = TspFunction.validate_branch(
             tsp, branch, proposed_cost
         )
         computations += branch_computations
         if not branch_valid:
             valid = False
-    result_queue.put((node_index, valid, computations, branch_validation_rate))
+    return (node_index, valid, computations, branch_validation_rate)
 
 
 def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters):
@@ -164,7 +148,8 @@ def _council_voting(initial_votes, ultimate_votes, total_votes, ultimate_voters)
 
 
 def proof_based_validation(
-    tsp, path, proposed_cost, transcript, validators, transcript_sigma, transcript_root
+    tsp, path, proposed_cost, transcript, validators, transcript_sigma, transcript_root,
+    host_workers=1,
 ):
     """Validate the submitted cost and full certificate; return decision, counts, and
     modeled times.
@@ -196,7 +181,7 @@ def proof_based_validation(
     # These composite setup units match the semantic benchmark's counting rule.
     semantic_setup_checks += 1 + len(root_children)
     hash_valid, hash_checks, hash_time = _parallel_hash_validation(
-        transcript, validators, transcript_root
+        transcript, validators, transcript_root, host_workers
     )
     if not hash_valid:
         result = empty_result.copy()
@@ -265,6 +250,7 @@ def _validate_transcript_semantics(
         return (False, computations, None, utils.inf)
 
     while index < len(steps):
+        check_cancelled()
         data = steps[index]["data"]
         step_type = data.get("type")
         if step_type == "branch":
@@ -443,7 +429,8 @@ def _validate_transcript_semantics(
     return (True, computations, expected_best_path, expected_incumbent)
 
 
-def _parallel_hash_validation(transcript, validators, transcript_root):
+def _parallel_hash_validation(transcript, validators, transcript_root, host_workers=1,
+                              parallel_threshold=10000):
     """Partition the chain into contiguous slices and combine their checks and modeled
     times.
     """
@@ -451,7 +438,7 @@ def _parallel_hash_validation(transcript, validators, transcript_root):
         return (False, 0, 0.0)
     steps = transcript.steps
     total_steps = len(steps)
-    if total_steps == 0:
+    if total_steps == 0 or not validators:
         return (False, 0, 0.0)
 
     # Avoid assigning empty hash slices when there are more validators than records.
@@ -475,11 +462,12 @@ def _parallel_hash_validation(transcript, validators, transcript_root):
             # The preceding slice also verifies this boundary hash.
             slice_initial_hash = steps[start_index - 1]["hash"]
         arguments.append(
-            (validator_index, steps, start_index, end_index, slice_initial_hash)
+            (validator_index, steps[start_index:end_index], start_index, slice_initial_hash)
         )
         current_index = end_index
-    with multiprocessing.Pool(processes=num_validators) as pool:
-        results = pool.map(_hash_slice_worker, arguments)
+    # Small certificates cost less to check directly than to send to fresh workers.
+    workers = host_workers if total_steps >= parallel_threshold else 1
+    results = host_map(_hash_slice_worker, arguments, workers)
     all_valid = True
     total_computations = 0
     validator_times = []
@@ -501,12 +489,13 @@ def _hash_slice_worker(args):
     """Check step numbers, previous-hash links, and recomputed hashes in one assigned
     slice.
     """
-    validator_index, steps, start_index, end_index, initial_hash = args
+    validator_index, steps, start_index, initial_hash = args
     previous_hash = initial_hash
     computations = 0
-    for index in range(start_index, end_index):
+    for offset, step in enumerate(steps):
+        check_cancelled()
+        index = start_index + offset
         computations += 1
-        step = steps[index]
         expected_step_number = index + 1
         if step["step"] != expected_step_number:
             return (validator_index, False, computations, index)

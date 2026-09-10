@@ -5,7 +5,10 @@ import powWorker
 from tspFunctions import TspFunction
 import utils
 import benchmark
-import multiprocessing
+from hostRuntime import HostPool, check_cancelled
+import copy
+import math
+from types import SimpleNamespace
 import secrets
 from blockData import BlockData
 from validation import council_validation
@@ -27,6 +30,7 @@ class MainFunctions:
     benchmarks_done = False
     benchmarked_validation_mode = None
     benchmarked_num_of_cities = None
+    benchmarked_repetitions = None
     hashes_per_second = 0.0
     computations_per_second = 0.0
     initial_validations_per_second = 0.0
@@ -43,6 +47,10 @@ class MainFunctions:
         block_hash_difficulty,
         validation_mode,
         benchmark_progress_callback=None,
+        host_workers=1,
+        benchmark_runs=1,
+        calibration=None,
+        run_inputs=None,
     ):
         """Store the configuration, restore or measure rates, and create the initial
         workers.
@@ -52,18 +60,54 @@ class MainFunctions:
         self.runs = runs
         self.block_hash_difficulty = block_hash_difficulty
         self.validation_mode = validation_mode
+        HostPool(host_workers)  # Validate before calibration starts.
+        if type(benchmark_runs) is not int or benchmark_runs < 1:
+            raise ValueError("benchmark_runs must be positive")
+        self.host_workers = host_workers
+        self.benchmark_runs = benchmark_runs
+        self.run_inputs = copy.deepcopy(run_inputs)
+        if self.run_inputs is not None and len(self.run_inputs) != runs:
+            raise ValueError("Provide one saved input per repetition")
+        self.active_input = self.run_inputs[0] if self.run_inputs else None
+        if calibration is not None:
+            required = list(self.rate_names()[:2])
+            if validation_mode & COUNCIL_VALIDATION:
+                required += list(self.rate_names()[2:4])
+            if validation_mode & PROOF_VALIDATION:
+                required += list(self.rate_names()[4:])
+            if any(key not in calibration or not math.isfinite(calibration[key]) or calibration[key] <= 0 for key in required):
+                raise ValueError("Missing or invalid reference calibration")
+            for key, value in calibration.items():
+                if key in self.rate_names():
+                    setattr(MainFunctions, key, value)
+            MainFunctions.benchmarks_done = True
+            MainFunctions.benchmarked_validation_mode = validation_mode
+            MainFunctions.benchmarked_num_of_cities = num_of_cities
+            MainFunctions.benchmarked_repetitions = benchmark_runs
 
         # Reuse calibration only when the city count and validation mode still match.
         if (
             not MainFunctions.benchmarks_done
             or MainFunctions.benchmarked_validation_mode != self.validation_mode
             or MainFunctions.benchmarked_num_of_cities != self.num_of_cities
+            or (MainFunctions.benchmarked_repetitions is not None
+                and MainFunctions.benchmarked_repetitions != self.benchmark_runs)
         ):
             self.run_benchmarks(progress_callback=benchmark_progress_callback)
 
         # Cached measurements still need to be converted into worker ratios each time.
         self.set_ratios()
         self.create_nodes()
+
+    @staticmethod
+    def rate_names():
+        """Reference rates exported with every reproducible experiment."""
+        return (
+            "hashes_per_second", "computations_per_second",
+            "initial_validations_per_second", "branch_validation_nodes_per_second",
+            "transcript_per_second", "hash_validation_per_second",
+            "semantic_validation_per_second",
+        )
 
     def set_ratios(self):
         """Convert cached reference throughputs into rate ratios used by every worker."""
@@ -117,14 +161,14 @@ class MainFunctions:
             completed_benchmarks, total_benchmarks, "Benchmarking PoW..."
         )
         MainFunctions.hashes_per_second = utils.average_runs(
-            benchmark.benchmark_pow, self.runs
+            benchmark.benchmark_pow, self.benchmark_runs
         )
         completed_benchmarks += 1
         benchmark_progress(
             completed_benchmarks, total_benchmarks, "Benchmarking PoUW..."
         )
         MainFunctions.computations_per_second = utils.average_runs(
-            lambda: benchmark.benchmark_tsp_pouw(size=self.num_of_cities), self.runs
+            lambda: benchmark.benchmark_tsp_pouw(size=self.num_of_cities), self.benchmark_runs
         )
         completed_benchmarks += 1
         if self.validation_mode & COUNCIL_VALIDATION:
@@ -135,7 +179,7 @@ class MainFunctions:
             )
             MainFunctions.initial_validations_per_second = utils.average_runs(
                 lambda: benchmark.benchmark_initial_validation(size=self.num_of_cities),
-                self.runs,
+                self.benchmark_runs,
             )
             completed_benchmarks += 1
             benchmark_progress(
@@ -145,7 +189,7 @@ class MainFunctions:
             )
             MainFunctions.branch_validation_nodes_per_second = utils.average_runs(
                 lambda: benchmark.benchmark_branch_validation(size=self.num_of_cities),
-                self.runs,
+                self.benchmark_runs,
             )
             completed_benchmarks += 1
         if self.validation_mode & PROOF_VALIDATION:
@@ -156,7 +200,7 @@ class MainFunctions:
             )
             MainFunctions.transcript_per_second = utils.average_runs(
                 lambda: benchmark.benchmark_transcript(size=self.num_of_cities),
-                self.runs,
+                self.benchmark_runs,
             )
             completed_benchmarks += 1
             benchmark_progress(
@@ -166,7 +210,7 @@ class MainFunctions:
             )
             MainFunctions.hash_validation_per_second = utils.average_runs(
                 lambda: benchmark.benchmark_hash_validation(size=self.num_of_cities),
-                self.runs,
+                self.benchmark_runs,
             )
             completed_benchmarks += 1
             benchmark_progress(
@@ -178,7 +222,7 @@ class MainFunctions:
                 lambda: benchmark.benchmark_semantic_validation(
                     size=self.num_of_cities
                 ),
-                self.runs,
+                self.benchmark_runs,
             )
             completed_benchmarks += 1
         benchmark_progress(
@@ -187,19 +231,31 @@ class MainFunctions:
         MainFunctions.benchmarks_done = True
         MainFunctions.benchmarked_validation_mode = self.validation_mode
         MainFunctions.benchmarked_num_of_cities = self.num_of_cities
+        MainFunctions.benchmarked_repetitions = self.benchmark_runs
 
     def create_nodes(self):
         """Generate a new shared TSP, reset the transcript, and create worker
         capabilities.
         """
-        Node.initialize_tsp(self.num_of_cities)
+        if self.active_input is None:
+            Node.initialize_tsp(self.num_of_cities)
+        else:
+            from tspData import TspData
+            case = self.active_input
+            if len(case["matrix"]) != self.num_of_cities or len(case["workers"]) != self.num_of_nodes:
+                raise ValueError("Saved input does not match experiment dimensions")
+            Node.tsp = TspData(self.num_of_cities, matrix=case["matrix"])
+            Node.blockData = SimpleNamespace(**copy.deepcopy(case["block"]))
 
         # Discard the previous run's transcript, including when switching validation mode.
         Node.transcript = None
         if self.validation_mode & PROOF_VALIDATION:
 
             # Setup commits the root and matrix; it is outside the modeled mining phase.
-            self.transcript_sigma = secrets.token_bytes(32)
+            self.transcript_sigma = (
+                bytes.fromhex(self.active_input["sigma"])
+                if self.active_input is not None else secrets.token_bytes(32)
+            )
             root = Node.tsp.tsp_root
             root_children = []
             for neighbour in range(root.size):
@@ -235,7 +291,8 @@ class MainFunctions:
             Node.initialize_transcript(root_data, self.transcript_root)
         self.node_list = []
         for i in range(self.num_of_nodes):
-            node = Node(f"node{i + 1}")
+            config = self.active_input["workers"][i] if self.active_input else {}
+            node = Node(f"node{i + 1}", **config)
             self.node_list.append(node)
         if all((node.search_rate <= 0 for node in self.node_list)):
             raise RuntimeError("All PoUW search rates are zero")
@@ -244,7 +301,7 @@ class MainFunctions:
         """Mine until the earliest simulated success and return exact cutoff counts and
         time.
         """
-        with multiprocessing.Pool(processes=len(self.node_list)) as pool:
+        with HostPool(self.host_workers) as pool:
             while not Node.found:
                 arguments = [
                     (
@@ -366,6 +423,7 @@ class MainFunctions:
                 validators,
                 self.transcript_sigma,
                 self.transcript_root,
+                host_workers=self.host_workers,
             )
             validation_valid = validation_valid and proof_result["valid"]
             validation_time += proof_result["validation_time"]
@@ -389,6 +447,7 @@ class MainFunctions:
                 self.node_list[0].tsp.best_cost,
                 MainFunctions.initial_validations_per_second,
                 MainFunctions.branch_validation_nodes_per_second,
+                host_workers=self.host_workers,
             )
             validation_valid = validation_valid and council_result["valid"]
             validation_time += council_result["validation_time"]
@@ -478,12 +537,18 @@ class MainFunctions:
         # Run each repetition with fresh per-run state before calculating averages.
         pow_results = []
         for i in range(self.runs):
+            check_cancelled()
+            if self.run_inputs is not None:
+                self.active_input = self.run_inputs[i]
             self.reset_simulation()
             result = self.multiple_node_pow(self.block_hash_difficulty)
             pow_results.append(result)
             update_progress()
         pouw_results = []
         for i in range(self.runs):
+            check_cancelled()
+            if self.run_inputs is not None:
+                self.active_input = self.run_inputs[i]
             self.reset_simulation()
             result = self.multiple_node_pouw_tsp()
             if self.validation_mode != NO_VALIDATION and (

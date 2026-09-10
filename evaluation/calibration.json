@@ -1,0 +1,9 @@
+{
+  "hashes_per_second": 878907.7735826136,
+  "computations_per_second": 29900.11086938391,
+  "initial_validations_per_second": 195465.6441547803,
+  "branch_validation_nodes_per_second": 6374.411577033021,
+  "transcript_per_second": 304822.10769393767,
+  "hash_validation_per_second": 350464.1299981696,
+  "semantic_validation_per_second": 54205.68280015726
+}

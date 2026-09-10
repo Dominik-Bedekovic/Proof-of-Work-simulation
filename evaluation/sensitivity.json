@@ -1,0 +1,32 @@
+[
+  {
+    "case_id": 0,
+    "search_nodes_per_second": 32724.582034567055,
+    "semantic_units_per_second": 54177.5396695393
+  },
+  {
+    "case_id": 1,
+    "search_nodes_per_second": 29707.073872161545,
+    "semantic_units_per_second": 52169.70427449116
+  },
+  {
+    "case_id": 2,
+    "search_nodes_per_second": 30739.566237274612,
+    "semantic_units_per_second": 54719.72583324431
+  },
+  {
+    "case_id": 3,
+    "search_nodes_per_second": 28397.416964317086,
+    "semantic_units_per_second": 51847.17341732586
+  },
+  {
+    "case_id": 4,
+    "search_nodes_per_second": 30435.09872882913,
+    "semantic_units_per_second": 54476.8373140608
+  },
+  {
+    "case_id": 5,
+    "search_nodes_per_second": 31318.542880107914,
+    "semantic_units_per_second": 54401.84090078317
+  }
+]
